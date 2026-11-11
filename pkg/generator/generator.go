@@ -9,6 +9,7 @@ import (
 	"github.com/iaditya8/soc-telemetry-simulator/pkg/config"
 	"github.com/iaditya8/soc-telemetry-simulator/pkg/fleet"
 	"github.com/iaditya8/soc-telemetry-simulator/pkg/formatter"
+	"github.com/iaditya8/soc-telemetry-simulator/pkg/scenario"
 )
 
 // Engine orchestrates high-volume log generation across fleet endpoints.
@@ -22,6 +23,7 @@ type Engine struct {
 	linuxFormatter *formatter.LinuxSyslogFormatter
 	paFormatter    *formatter.PaloAltoFormatter
 	dnsFormatter   *formatter.BIND9Formatter
+	orchestrator   *scenario.Orchestrator
 }
 
 // NewEngine initializes the core generation engine.
@@ -31,16 +33,28 @@ func NewEngine(cfg config.SimulationConfig, fm *fleet.FleetManager, sensor Queue
 		DurationSeconds: cfg.DurationSeconds,
 	}
 
+	fmts := &scenario.Formatters{
+		Windows:  formatter.NewWindowsXMLFormatter(),
+		Linux:    formatter.NewLinuxSyslogFormatter(),
+		PaloAlto: formatter.NewPaloAltoFormatter(),
+		BIND9:    formatter.NewBIND9Formatter(),
+	}
+	orchCfg := scenario.OrchestratorConfig{
+		SuspiciousRatio: cfg.SuspiciousRatio,
+	}
+	orch := scenario.NewOrchestrator(orchCfg, fm, fmts)
+
 	return &Engine{
 		cfg:            cfg,
 		fleetMgr:       fm,
 		scheduler:      NewScheduler(schedCfg, sensor),
 		outChan:        make(chan *ByteBuffer, 50000), // Bounded buffer channel
 		rng:            rand.New(rand.NewSource(cfg.RandomSeed)),
-		winFormatter:   formatter.NewWindowsXMLFormatter(),
-		linuxFormatter: formatter.NewLinuxSyslogFormatter(),
-		paFormatter:    formatter.NewPaloAltoFormatter(),
-		dnsFormatter:   formatter.NewBIND9Formatter(),
+		winFormatter:   fmts.Windows,
+		linuxFormatter: fmts.Linux,
+		paFormatter:    fmts.PaloAlto,
+		dnsFormatter:   fmts.BIND9,
+		orchestrator:   orch,
 	}
 }
 
@@ -52,6 +66,11 @@ func (e *Engine) OutputChannel() <-chan *ByteBuffer {
 // Scheduler returns the underlying rate scheduler.
 func (e *Engine) Scheduler() *Scheduler {
 	return e.scheduler
+}
+
+// Orchestrator returns the attack scenario orchestrator.
+func (e *Engine) Orchestrator() *scenario.Orchestrator {
+	return e.orchestrator
 }
 
 // Run executes the generation engine until the context is canceled or duration elapses.
@@ -70,13 +89,19 @@ func (e *Engine) Run(ctx context.Context) {
 	e.scheduler.Start(ctx, func(workerID int, quota int) {
 		rng := workerRNGs[workerID%numWorkers]
 		for i := 0; i < quota; i++ {
-			ep := e.fleetMgr.SampleWeighted()
-			if ep == nil {
-				continue
-			}
-
 			buf := GetBuffer()
-			e.SynthesizeBaselineEventWithRNG(ep, buf, rng)
+			now := time.Now().UTC()
+
+			if e.orchestrator.ShouldEmitSuspicious(rng) {
+				e.orchestrator.StepSuspicious(buf, now, uint64(workerID*100000+i), rng)
+			} else {
+				ep := e.fleetMgr.SampleWeighted()
+				if ep == nil {
+					buf.Release()
+					continue
+				}
+				e.SynthesizeBaselineEventWithRNG(ep, buf, rng)
+			}
 
 			select {
 			case <-ctx.Done():
