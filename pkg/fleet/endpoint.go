@@ -48,14 +48,18 @@ type Endpoint struct {
 	currentLogonID uint64
 }
 
-// NextPID returns a monotonically increasing process ID (PID) for this endpoint.
+// NextPID returns a monotonically increasing process ID (PID) for this endpoint (>= 1024).
 func (e *Endpoint) NextPID() uint32 {
-	pid := atomic.AddUint32(&e.currentPID, 4)
-	if pid < 1000 {
-		atomic.StoreUint32(&e.currentPID, 1024)
-		return 1024
+	for {
+		curr := atomic.LoadUint32(&e.currentPID)
+		next := curr + 4
+		if curr == 0 || next < 1024 {
+			next = 1024
+		}
+		if atomic.CompareAndSwapUint32(&e.currentPID, curr, next) {
+			return next
+		}
 	}
-	return pid
 }
 
 // NextLogonHex returns a realistic Windows hex logon ID (e.g., 0x1A2B3C).

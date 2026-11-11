@@ -100,3 +100,4 @@ func (b *ByteBuffer) AppendTimeISO8601(t time.Time) {
 func (b *ByteBuffer) AppendTimeSyslog(t time.Time) {
 	b.buf = t.AppendFormat(b.buf, "Jan _2 15:04:05")
 }
+
