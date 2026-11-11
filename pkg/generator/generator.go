@@ -149,3 +149,4 @@ func (e *Engine) Stats() string {
 	return fmt.Sprintf("Generated: %d | Current EPS: %d",
 		e.scheduler.TotalGenerated(), e.scheduler.CurrentEPS())
 }
+

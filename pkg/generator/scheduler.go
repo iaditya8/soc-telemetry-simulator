@@ -167,3 +167,4 @@ func (s *Scheduler) TotalGenerated() uint64 {
 func (s *Scheduler) CurrentEPS() uint64 {
 	return atomic.LoadUint64(&s.currentEPS)
 }
+

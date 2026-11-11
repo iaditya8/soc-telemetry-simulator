@@ -14,6 +14,7 @@ import (
 // FleetManager manages logical endpoint generation, role routing, and IP allocation.
 type FleetManager struct {
 	mu              sync.RWMutex
+	rngMu           sync.Mutex
 	endpoints       []*Endpoint
 	endpointsByID   map[string]*Endpoint
 	endpointsByRole map[Role][]*Endpoint
@@ -81,6 +82,10 @@ func (fm *FleetManager) GenerateFleet(cfg config.FleetConfig) error {
 	}
 
 	dist := cfg.Distribution
+	if dist.WindowsWorkstations < 0 || dist.LinuxServers < 0 || dist.Firewalls < 0 || dist.DNSServers < 0 || dist.WebServers < 0 {
+		return fmt.Errorf("role percentages cannot be negative")
+	}
+
 	wksCount := (cfg.TotalEndpoints * dist.WindowsWorkstations) / 100
 	linuxCount := (cfg.TotalEndpoints * dist.LinuxServers) / 100
 	fwCount := (cfg.TotalEndpoints * dist.Firewalls) / 100
@@ -164,8 +169,18 @@ func (fm *FleetManager) buildWorkstation(idx int, ip net.IP) *Endpoint {
 	depts := []string{"Finance", "Engineering", "HR", "Sales", "Legal", "Marketing"}
 	dept := depts[fm.rng.Intn(len(depts))]
 	deptCode := deptMap[dept]
+	userSIDs := map[string]string{
+		"alice.smith": "S-1-5-21-3623811015-3361044348-30300820-1101",
+		"bob.jones":   "S-1-5-21-3623811015-3361044348-30300820-1102",
+		"carol.white": "S-1-5-21-3623811015-3361044348-30300820-1103",
+		"david.clark": "S-1-5-21-3623811015-3361044348-30300820-1104",
+		"emma.davis":  "S-1-5-21-3623811015-3361044348-30300820-1105",
+	}
 	userList := []string{"alice.smith", "bob.jones", "carol.white", "david.clark", "emma.davis"}
 	userName := userList[fm.rng.Intn(len(userList))]
+	userSID := userSIDs[userName]
+
+	initialLogonID := uint64(0x100000 + idx*16)
 
 	return &Endpoint{
 		ID:             fmt.Sprintf("EP-WIN-WKS-%04d", idx),
@@ -181,15 +196,15 @@ func (fm *FleetManager) buildWorkstation(idx int, ip net.IP) *Endpoint {
 			{
 				Username:  userName,
 				Domain:    "CORP",
-				UserSID:   fmt.Sprintf("S-1-5-21-3623811015-3361044348-30300820-%04d", 1000+idx),
-				LogonID:   fmt.Sprintf("0x%X", 0x100000+idx*16),
+				UserSID:   userSID,
+				LogonID:   fmt.Sprintf("0x%X", initialLogonID),
 				LogonTime: time.Now().UTC().Add(-4 * time.Hour),
 			},
 		},
 		EnabledSources: []string{"windows_security_xml", "windows_sysmon"},
 		Weight:         1.0,
 		currentPID:     2048,
-		currentLogonID: 0x100000,
+		currentLogonID: initialLogonID + 1,
 	}
 }
 
@@ -289,6 +304,33 @@ func (fm *FleetManager) SampleRandom() *Endpoint {
 	}
 	idx := atomic.AddUint64(&fm.sampleCounter, 1) % uint64(n)
 	return fm.endpoints[idx]
+}
+
+// SampleWeighted selects an endpoint based on assigned Endpoint.Weight.
+func (fm *FleetManager) SampleWeighted() *Endpoint {
+	fm.mu.RLock()
+	defer fm.mu.RUnlock()
+	if len(fm.endpoints) == 0 {
+		return nil
+	}
+	var totalWeight float64
+	for _, ep := range fm.endpoints {
+		totalWeight += ep.Weight
+	}
+	if totalWeight <= 0 {
+		return fm.SampleRandom()
+	}
+	fm.rngMu.Lock()
+	r := fm.rng.Float64() * totalWeight
+	fm.rngMu.Unlock()
+
+	for _, ep := range fm.endpoints {
+		r -= ep.Weight
+		if r <= 0 {
+			return ep
+		}
+	}
+	return fm.endpoints[len(fm.endpoints)-1]
 }
 
 // SampleByRole returns an endpoint matching the specified role in a thread-safe, lock-free manner.

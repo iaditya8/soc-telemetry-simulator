@@ -36,6 +36,10 @@ func NewSubnetPool(zone SubnetZone, cidrStr string, gatewayStr string) (*SubnetP
 		return nil, fmt.Errorf("invalid CIDR %q: %w", cidrStr, err)
 	}
 
+	if ipNet.IP.To4() == nil {
+		return nil, fmt.Errorf("only IPv4 subnets are currently supported, got %q", cidrStr)
+	}
+
 	gw := net.ParseIP(gatewayStr).To4()
 	if gw == nil {
 		return nil, fmt.Errorf("invalid gateway IP %q", gatewayStr)
@@ -47,7 +51,7 @@ func NewSubnetPool(zone SubnetZone, cidrStr string, gatewayStr string) (*SubnetP
 		Network:    ipNet,
 		Gateway:    gw,
 		allocated:  make(map[string]bool),
-		currentIdx: 2, // Skip .0 network and .1 gateway
+		currentIdx: 1, // Start at offset 1, skip network (.0), and let allocated map exclude gateway
 	}
 	pool.allocated[gw.String()] = true
 
@@ -88,6 +92,6 @@ func (p *SubnetPool) Reset() {
 	defer p.mu.Unlock()
 	p.allocated = make(map[string]bool)
 	p.allocated[p.Gateway.String()] = true
-	p.currentIdx = 2
+	p.currentIdx = 1
 }
 

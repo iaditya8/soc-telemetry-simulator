@@ -119,6 +119,50 @@ func TestRoleSampling(t *testing.T) {
 	if randomEP == nil {
 		t.Errorf("SampleRandom returned nil")
 	}
+
+	weightedEP := fm.SampleWeighted()
+	if weightedEP == nil {
+		t.Errorf("SampleWeighted returned nil")
+	}
+}
+
+func TestPIDProgression(t *testing.T) {
+	ep := &Endpoint{}
+	pid1 := ep.NextPID()
+	pid2 := ep.NextPID()
+
+	if pid1 < 1024 {
+		t.Errorf("expected initial PID >= 1024, got %d", pid1)
+	}
+	if pid2 <= pid1 {
+		t.Errorf("expected PID progression, got pid1=%d, pid2=%d", pid1, pid2)
+	}
+}
+
+func TestGatewayReservation(t *testing.T) {
+	pool, err := NewSubnetPool(ZoneWorkstations, "10.0.0.0/29", "10.0.0.2")
+	if err != nil {
+		t.Fatalf("failed to create pool: %v", err)
+	}
+
+	// 10.0.0.0/29 usable range: 10.0.0.1 to 10.0.0.6 (6 usable hosts)
+	// Gateway is 10.0.0.2
+	var allocatedIPs []string
+	for i := 0; i < 5; i++ {
+		ip, err := pool.NextIP()
+		if err != nil {
+			t.Fatalf("allocation %d failed: %v", i, err)
+		}
+		if ip.String() == "10.0.0.2" {
+			t.Fatalf("gateway 10.0.0.2 was allocated!")
+		}
+		allocatedIPs = append(allocatedIPs, ip.String())
+	}
+
+	// Verify 10.0.0.1 was allocated first
+	if allocatedIPs[0] != "10.0.0.1" {
+		t.Errorf("expected 10.0.0.1 to be allocated before gateway, got %s", allocatedIPs[0])
+	}
 }
 
 func BenchmarkFleetGeneration250Endpoints(b *testing.B) {
