@@ -10,6 +10,9 @@ jobs:
   test-and-build:
     name: Test and Build
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     strategy:
       matrix:
         os: [ ubuntu-latest, windows-latest ]
@@ -28,7 +31,7 @@ jobs:
       - name: Verify Go Module
         run: |
           go mod tidy
-          git diff --exit-code go.mod go.sum || echo "Modules in sync"
+          git diff --exit-code go.mod go.sum
 
       - name: Static Analysis (go vet)
         run: go vet ./...
@@ -43,7 +46,7 @@ jobs:
       - name: Build Windows Binary
         if: runner.os == 'Windows'
         run: |
-          mkdir -Force bin
+          mkdir -p bin
           go build -v -ldflags="-s -w" -o bin/soc-sim.exe ./cmd/soc-sim
 
       - name: Build Linux Binary
@@ -67,4 +70,3 @@ jobs:
           name: soc-sim-linux-amd64
           path: bin/soc-sim
           if-no-files-found: warn
-

@@ -90,3 +90,4 @@ func (p *SubnetPool) Reset() {
 	p.allocated[p.Gateway.String()] = true
 	p.currentIdx = 2
 }
+

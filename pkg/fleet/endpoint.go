@@ -77,3 +77,4 @@ func (e *Endpoint) PrimaryUser() ActiveUser {
 		LogonTime: time.Now().UTC().Add(-8 * time.Hour),
 	}
 }
+
