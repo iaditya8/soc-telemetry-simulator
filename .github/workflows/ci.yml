@@ -67,3 +67,4 @@ jobs:
           name: soc-sim-linux-amd64
           path: bin/soc-sim
           if-no-files-found: warn
+

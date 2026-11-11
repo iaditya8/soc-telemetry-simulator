@@ -1,0 +1,41 @@
+# SOC Telemetry Simulator Configuration
+simulation:
+  target_eps: 1000
+  duration_seconds: 60
+  normal_ratio: 0.95
+  suspicious_ratio: 0.05
+  random_seed: 42
+  active_scenarios:
+    - "T1110.001" # SSH/RDP Password Guessing
+    - "T1046"     # Network Service Discovery / Port Scan
+    - "T1071.004" # DNS C2 Beaconing
+
+fleet:
+  total_endpoints: 100
+  distribution:
+    windows_workstations: 60
+    linux_servers: 20
+    firewalls: 10
+    dns_servers: 5
+    web_servers: 5
+
+destination:
+  transport: "tcp" # options: "tcp", "tls", "hec", "file", "mock"
+  host: "127.0.0.1"
+  port: 514
+  path: "/services/collector/raw"
+  auth_token: ""
+  tls_verify: false
+  batch_size_events: 2000
+  batch_flush_timeout_ms: 100
+  queue_capacity: 50000
+  overflow_policy: "pause" # options: "pause", "drop"
+
+server:
+  bind_address: "127.0.0.1"
+  port: 8080
+
+ledger:
+  enable_sqlite: true
+  database_path: "soc_simulator.db"
+  report_output_dir: "reports/output"
