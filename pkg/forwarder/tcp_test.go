@@ -218,7 +218,9 @@ func TestTCPForwarderPool(t *testing.T) {
 	defer listener.Close()
 
 	var count uint64
-	var connWg sync.WaitGroup
+	const totalEvents = 2000
+	receivedAll := make(chan struct{})
+	var once sync.Once
 
 	go func() {
 		for {
@@ -226,13 +228,13 @@ func TestTCPForwarderPool(t *testing.T) {
 			if err != nil {
 				return
 			}
-			connWg.Add(1)
 			go func(c net.Conn) {
-				defer connWg.Done()
 				defer c.Close()
 				scanner := bufio.NewScanner(c)
 				for scanner.Scan() {
-					atomic.AddUint64(&count, 1)
+					if atomic.AddUint64(&count, 1) == totalEvents {
+						once.Do(func() { close(receivedAll) })
+					}
 				}
 			}(conn)
 		}
@@ -247,8 +249,8 @@ func TestTCPForwarderPool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create pool: %v", err)
 	}
+	defer pool.Close()
 
-	const totalEvents = 2000
 	var wg sync.WaitGroup
 	wg.Add(4)
 
@@ -274,22 +276,10 @@ func TestTCPForwarderPool(t *testing.T) {
 		t.Fatalf("pool Flush failed: %v", err)
 	}
 
-	// Close pool to cleanly tear down connections and signal EOF to all receiver scanners
-	if err := pool.Close(); err != nil {
-		t.Fatalf("pool Close failed: %v", err)
-	}
-
-	// Wait for all receiver goroutines to finish without fixed sleeps
-	receiversDone := make(chan struct{})
-	go func() {
-		connWg.Wait()
-		close(receiversDone)
-	}()
-
 	select {
-	case <-receiversDone:
+	case <-receivedAll:
 	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for pool receivers to complete")
+		t.Fatalf("timed out waiting for %d events, got %d", totalEvents, atomic.LoadUint64(&count))
 	}
 
 	stats := pool.Stats()
