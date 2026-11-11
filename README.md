@@ -1,4 +1,4 @@
-# SOC Telemetry Simulator — Design Specification v2.0
+# SOC Telemetry Simulator — Design Specification
 
 ## Purpose
 
