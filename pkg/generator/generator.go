@@ -8,15 +8,17 @@ import (
 
 	"github.com/iaditya8/soc-telemetry-simulator/pkg/config"
 	"github.com/iaditya8/soc-telemetry-simulator/pkg/fleet"
+	"github.com/iaditya8/soc-telemetry-simulator/pkg/formatter"
 )
 
 // Engine orchestrates high-volume log generation across fleet endpoints.
 type Engine struct {
-	cfg       config.SimulationConfig
-	fleetMgr  *fleet.FleetManager
-	scheduler *Scheduler
-	outChan   chan *ByteBuffer
-	rng       *rand.Rand
+	cfg          config.SimulationConfig
+	fleetMgr     *fleet.FleetManager
+	scheduler    *Scheduler
+	outChan      chan *ByteBuffer
+	rng          *rand.Rand
+	winFormatter *formatter.WindowsXMLFormatter
 }
 
 // NewEngine initializes the core generation engine.
@@ -27,11 +29,12 @@ func NewEngine(cfg config.SimulationConfig, fm *fleet.FleetManager, sensor Queue
 	}
 
 	return &Engine{
-		cfg:       cfg,
-		fleetMgr:  fm,
-		scheduler: NewScheduler(schedCfg, sensor),
-		outChan:   make(chan *ByteBuffer, 50000), // Bounded buffer channel
-		rng:       rand.New(rand.NewSource(cfg.RandomSeed)),
+		cfg:          cfg,
+		fleetMgr:     fm,
+		scheduler:    NewScheduler(schedCfg, sensor),
+		outChan:      make(chan *ByteBuffer, 50000), // Bounded buffer channel
+		rng:          rand.New(rand.NewSource(cfg.RandomSeed)),
+		winFormatter: formatter.NewWindowsXMLFormatter(),
 	}
 }
 
@@ -49,7 +52,17 @@ func (e *Engine) Scheduler() *Scheduler {
 func (e *Engine) Run(ctx context.Context) {
 	defer close(e.outChan)
 
+	numWorkers := e.scheduler.cfg.WorkerCount
+	if numWorkers <= 0 {
+		numWorkers = 1
+	}
+	workerRNGs := make([]*rand.Rand, numWorkers)
+	for i := 0; i < numWorkers; i++ {
+		workerRNGs[i] = rand.New(rand.NewSource(e.cfg.RandomSeed + int64(i)*1000 + 1))
+	}
+
 	e.scheduler.Start(ctx, func(workerID int, quota int) {
+		rng := workerRNGs[workerID%numWorkers]
 		for i := 0; i < quota; i++ {
 			ep := e.fleetMgr.SampleWeighted()
 			if ep == nil {
@@ -57,7 +70,7 @@ func (e *Engine) Run(ctx context.Context) {
 			}
 
 			buf := GetBuffer()
-			e.SynthesizeBaselineEvent(ep, buf)
+			e.SynthesizeBaselineEventWithRNG(ep, buf, rng)
 
 			select {
 			case <-ctx.Done():
@@ -69,33 +82,19 @@ func (e *Engine) Run(ctx context.Context) {
 	})
 }
 
-// SynthesizeBaselineEvent synthesizes a fast, realistic baseline enterprise log into the buffer.
+// SynthesizeBaselineEvent synthesizes a fast, realistic baseline enterprise log into the buffer using the default RNG.
 func (e *Engine) SynthesizeBaselineEvent(ep *fleet.Endpoint, buf *ByteBuffer) {
+	e.SynthesizeBaselineEventWithRNG(ep, buf, e.rng)
+}
+
+// SynthesizeBaselineEventWithRNG synthesizes a fast, realistic baseline enterprise log with a thread-safe RNG.
+func (e *Engine) SynthesizeBaselineEventWithRNG(ep *fleet.Endpoint, buf *ByteBuffer, rng *rand.Rand) {
 	now := time.Now().UTC()
 
 	switch ep.Role {
 	case fleet.RoleWorkstation, fleet.RoleDomainController:
-		// Windows Security Event XML 4624 (Logon Success)
-		user := ep.PrimaryUser()
-		buf.AppendString("<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\"><System><Provider Name=\"Microsoft-Windows-Security-Auditing\" Guid=\"{54849625-5478-4994-A5BA-3E3B0328C30D}\"/><EventID>4624</EventID><Version>2</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8020000000000000</Keywords><TimeCreated SystemTime=\"")
-		buf.AppendTimeISO8601(now)
-		buf.AppendString("\"/><EventRecordID>")
-		buf.AppendUint(uint64(ep.NextPID() * 100))
-		buf.AppendString("</EventRecordID><Execution ProcessID=\"688\" ThreadID=\"1920\"/><Channel>Security</Channel><Computer>")
-		buf.AppendString(ep.Hostname)
-		buf.AppendString("</Computer><Security/></System><EventData><Data Name=\"TargetUserSid\">")
-		buf.AppendString(user.UserSID)
-		buf.AppendString("</Data><Data Name=\"TargetUserName\">")
-		buf.AppendString(user.Username)
-		buf.AppendString("</Data><Data Name=\"TargetDomainName\">")
-		buf.AppendString(user.Domain)
-		buf.AppendString("</Data><Data Name=\"TargetLogonId\">")
-		buf.AppendString(ep.NextLogonHex())
-		buf.AppendString("</Data><Data Name=\"LogonType\">2</Data><Data Name=\"IpAddress\">")
-		buf.AppendString(ep.IP.String())
-		buf.AppendString("</Data><Data Name=\"IpPort\">")
-		buf.AppendInt(int64(49152 + (ep.NextPID() % 1000)))
-		buf.AppendString("</Data></EventData></Event>\n")
+		// Dynamic Windows Security XML (4688, 4624, 4625, 4720)
+		e.winFormatter.FormatRandomEvent(buf, ep, uint64(ep.NextPID()*100), now, rng)
 
 	case fleet.RoleLinuxServer:
 		// Linux sshd accepted publickey (RFC 3164)

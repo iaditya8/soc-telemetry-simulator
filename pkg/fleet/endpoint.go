@@ -34,6 +34,7 @@ type Endpoint struct {
 	Hostname       string          `json:"hostname"`
 	Domain         string          `json:"domain"`
 	IP             net.IP          `json:"ip"`
+	IPStr          string          `json:"ip_str"`
 	MAC            net.HardwareAddr`json:"mac"`
 	Role           Role            `json:"role"`
 	OSFamily       string          `json:"os_family"`
@@ -62,10 +63,14 @@ func (e *Endpoint) NextPID() uint32 {
 	}
 }
 
+// NextLogonID returns a monotonically increasing raw logon ID.
+func (e *Endpoint) NextLogonID() uint64 {
+	return atomic.AddUint64(&e.currentLogonID, 1)
+}
+
 // NextLogonHex returns a realistic Windows hex logon ID (e.g., 0x1A2B3C).
 func (e *Endpoint) NextLogonHex() string {
-	id := atomic.AddUint64(&e.currentLogonID, 1)
-	return fmt.Sprintf("0x%X", id)
+	return fmt.Sprintf("0x%X", e.NextLogonID())
 }
 
 // PrimaryUser returns the default active user on this endpoint or a synthetic fallback.
