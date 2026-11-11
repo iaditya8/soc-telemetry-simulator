@@ -181,3 +181,4 @@ func (d *DestinationConfig) BatchDuration() time.Duration {
 	}
 	return time.Duration(d.BatchFlushTimeoutMs) * time.Millisecond
 }
+

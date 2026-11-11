@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/iaditya8/soc-telemetry-simulator/pkg/config"
+	"github.com/iaditya8/soc-telemetry-simulator/pkg/fleet"
 )
 
 const (
@@ -59,6 +60,19 @@ func main() {
 	fmt.Printf(" [Config] Target Throughput: %d EPS | Duration: %d seconds\n",
 		cfg.Simulation.TargetEPS, cfg.Simulation.DurationSeconds)
 	fmt.Printf(" [Config] Virtual Fleet: %d logical endpoints\n", cfg.Fleet.TotalEndpoints)
+
+	// Initialize Fleet Manager
+	fleetMgr, err := fleet.NewFleetManager(cfg.Simulation.RandomSeed)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, " [Error] Failed to initialize fleet manager: %v\n", err)
+		os.Exit(1)
+	}
+	if err := fleetMgr.GenerateFleet(cfg.Fleet); err != nil {
+		fmt.Fprintf(os.Stderr, " [Error] Failed to generate virtual fleet: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf(" [Fleet] Successfully synthesized %d logical endpoints across 5 isolated subnets.\n",
+		fleetMgr.TotalCount())
 	fmt.Printf(" [Config] Destination: %s (%s:%d)\n",
 		cfg.Destination.Transport, cfg.Destination.Host, cfg.Destination.Port)
 	fmt.Printf(" [Config] Activity Mix: %.0f%% Normal / %.0f%% Suspicious\n",
@@ -76,3 +90,4 @@ func main() {
 		os.Exit(1)
 	}
 }
+
