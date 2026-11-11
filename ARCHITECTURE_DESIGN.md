@@ -1,9 +1,9 @@
-# SOC Telemetry Simulator v2.0 — Comprehensive System Architecture & Engineering Design
+# SOC Telemetry Simulator  — Comprehensive System Architecture & Engineering Design
 
 ## 1. Executive Summary & Product Positioning
 
 ### 1.1 Product Mission
-The **SOC Telemetry Simulator v2.0** is an enterprise-grade, standalone security log generation and SIEM ingestion test platform. It synthesizes high-volume, realistic, source-faithful raw telemetry representing hundreds of heterogeneous logical endpoints (workstations, servers, firewalls, routers, DNS, web, databases, and VPNs) and forwards that telemetry to a SIEM destination (**Spectra**) to validate ingestion capacity, parsing accuracy, and detection efficacy.
+The **SOC Telemetry Simulator ** is an enterprise-grade, standalone security log generation and SIEM ingestion test platform. It synthesizes high-volume, realistic, source-faithful raw telemetry representing hundreds of heterogeneous logical endpoints (workstations, servers, firewalls, routers, DNS, web, databases, and VPNs) and forwards that telemetry to a SIEM destination (**Spectra**) to validate ingestion capacity, parsing accuracy, and detection efficacy.
 
 ### 1.2 Strict Product Boundaries
 * **Telemetry Generator, Not a SIEM:** The simulator generates, buffers, and forwards logs. It maintains an internal ledger for auditing its own actions but does not parse, correlate, or index telemetry as a SIEM.
@@ -456,7 +456,7 @@ The simulator treats Spectra as an external receiver reachable via industry-stan
 ### 8.3 Exact Delivery Accounting Lifecycle
 
 ```mermaid
-stateDiagram-v2
+stateDiagram
     [*] --> GENERATED: Engine creates raw string
     GENERATED --> ENQUEUED: Placed in Ring Buffer
     ENQUEUED --> SUBMITTED: Handed to Network Adapter
@@ -554,7 +554,7 @@ The UI is designed as a clean, responsive single-page web application.
 
 ```
 +----------------------------------------------------------------------------------------------------+
-|  SOC TELEMETRY SIMULATOR v2.0              [Status: IDLE]   [Fleet: 100 Endpoints]   [Dest: Spectra] |
+|  SOC TELEMETRY SIMULATOR               [Status: IDLE]   [Fleet: 100 Endpoints]   [Dest: Spectra] |
 +----------------------------------------------------------------------------------------------------+
 | [Overview]  |  [Fleet Management]  |  [Event Catalog]  |  [Run Config]  |  [Live Monitor]  | [Reports] |
 +----------------------------------------------------------------------------------------------------+
