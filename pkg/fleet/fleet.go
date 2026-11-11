@@ -187,6 +187,7 @@ func (fm *FleetManager) buildWorkstation(idx int, ip net.IP) *Endpoint {
 		Hostname:       fmt.Sprintf("WKS-%s-%03d.corp.local", deptCode, idx),
 		Domain:         "CORP.LOCAL",
 		IP:             ip,
+		IPStr:          ip.String(),
 		MAC:            fm.generateMAC(0x00, 0x50, 0x56), // VMware OUI
 		Role:           RoleWorkstation,
 		OSFamily:       "Windows",
@@ -214,6 +215,7 @@ func (fm *FleetManager) buildLinuxServer(idx int, ip net.IP) *Endpoint {
 		Hostname:       fmt.Sprintf("srv-prod-app%02d.corp.local", idx),
 		Domain:         "corp.local",
 		IP:             ip,
+		IPStr:          ip.String(),
 		MAC:            fm.generateMAC(0x52, 0x54, 0x00), // QEMU/KVM OUI
 		Role:           RoleLinuxServer,
 		OSFamily:       "Linux",
@@ -240,6 +242,7 @@ func (fm *FleetManager) buildFirewall(idx int, ip net.IP) *Endpoint {
 		Hostname:       fmt.Sprintf("pa-perim-fw%02d.corp.local", idx),
 		Domain:         "corp.local",
 		IP:             ip,
+		IPStr:          ip.String(),
 		MAC:            fm.generateMAC(0x00, 0x1B, 0x17), // Palo Alto Networks OUI
 		Role:           RoleFirewall,
 		OSFamily:       "PAN-OS",
@@ -257,6 +260,7 @@ func (fm *FleetManager) buildDNSServer(idx int, ip net.IP) *Endpoint {
 		Hostname:       fmt.Sprintf("ns%02d.corp.local", idx),
 		Domain:         "corp.local",
 		IP:             ip,
+		IPStr:          ip.String(),
 		MAC:            fm.generateMAC(0x00, 0x0C, 0x29), // VMware OUI
 		Role:           RoleDNSServer,
 		OSFamily:       "Linux",
@@ -274,6 +278,7 @@ func (fm *FleetManager) buildWebServer(idx int, ip net.IP) *Endpoint {
 		Hostname:       fmt.Sprintf("portal-web%02d.corp.local", idx),
 		Domain:         "corp.local",
 		IP:             ip,
+		IPStr:          ip.String(),
 		MAC:            fm.generateMAC(0x00, 0x16, 0x3E), // Xen OUI
 		Role:           RoleWebServer,
 		OSFamily:       "Linux",
