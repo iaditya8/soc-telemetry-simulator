@@ -39,3 +39,4 @@ ledger:
   enable_sqlite: true
   database_path: "soc_simulator.db"
   report_output_dir: "reports/output"
+

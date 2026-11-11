@@ -112,3 +112,4 @@ destination:
 		t.Errorf("expected Port 6514, got %d", cfg.Destination.Port)
 	}
 }
+
