@@ -18,7 +18,8 @@ type Engine struct {
 	scheduler    *Scheduler
 	outChan      chan *ByteBuffer
 	rng          *rand.Rand
-	winFormatter *formatter.WindowsXMLFormatter
+	winFormatter   *formatter.WindowsXMLFormatter
+	linuxFormatter *formatter.LinuxSyslogFormatter
 }
 
 // NewEngine initializes the core generation engine.
@@ -29,12 +30,13 @@ func NewEngine(cfg config.SimulationConfig, fm *fleet.FleetManager, sensor Queue
 	}
 
 	return &Engine{
-		cfg:          cfg,
-		fleetMgr:     fm,
-		scheduler:    NewScheduler(schedCfg, sensor),
-		outChan:      make(chan *ByteBuffer, 50000), // Bounded buffer channel
-		rng:          rand.New(rand.NewSource(cfg.RandomSeed)),
-		winFormatter: formatter.NewWindowsXMLFormatter(),
+		cfg:            cfg,
+		fleetMgr:       fm,
+		scheduler:      NewScheduler(schedCfg, sensor),
+		outChan:        make(chan *ByteBuffer, 50000), // Bounded buffer channel
+		rng:            rand.New(rand.NewSource(cfg.RandomSeed)),
+		winFormatter:   formatter.NewWindowsXMLFormatter(),
+		linuxFormatter: formatter.NewLinuxSyslogFormatter(),
 	}
 }
 
@@ -97,18 +99,8 @@ func (e *Engine) SynthesizeBaselineEventWithRNG(ep *fleet.Endpoint, buf *ByteBuf
 		e.winFormatter.FormatRandomEvent(buf, ep, uint64(ep.NextPID()*100), now, rng)
 
 	case fleet.RoleLinuxServer:
-		// Linux sshd accepted publickey (RFC 3164)
-		buf.AppendString("<86>")
-		buf.AppendTimeSyslog(now)
-		buf.AppendByte(' ')
-		buf.AppendString(ep.Hostname)
-		buf.AppendString(" sshd[")
-		buf.AppendUint(uint64(ep.NextPID()))
-		buf.AppendString("]: Accepted publickey for ")
-		buf.AppendString(ep.PrimaryUser().Username)
-		buf.AppendString(" from ")
-		buf.AppendString(ep.IP.String())
-		buf.AppendString(" port 54822 ssh2\n")
+		// Linux authentication & administration telemetry (sshd success/failure, sudo, systemd)
+		e.linuxFormatter.FormatRandomLinuxEvent(buf, ep, formatter.SyslogFormatRFC3164, now, rng)
 
 	case fleet.RoleFirewall:
 		// Palo Alto Traffic Allow CSV
