@@ -51,7 +51,7 @@ func (e *Engine) Run(ctx context.Context) {
 
 	e.scheduler.Start(ctx, func(workerID int, quota int) {
 		for i := 0; i < quota; i++ {
-			ep := e.fleetMgr.SampleRandom()
+			ep := e.fleetMgr.SampleWeighted()
 			if ep == nil {
 				continue
 			}

@@ -70,6 +70,11 @@ func NewFleetManager(seed int64) (*FleetManager, error) {
 
 // GenerateFleet creates logical endpoints according to the provided configuration.
 func (fm *FleetManager) GenerateFleet(cfg config.FleetConfig) error {
+	dist := cfg.Distribution
+	if dist.WindowsWorkstations < 0 || dist.LinuxServers < 0 || dist.Firewalls < 0 || dist.DNSServers < 0 || dist.WebServers < 0 {
+		return fmt.Errorf("role percentages cannot be negative")
+	}
+
 	fm.mu.Lock()
 	defer fm.mu.Unlock()
 
@@ -79,11 +84,6 @@ func (fm *FleetManager) GenerateFleet(cfg config.FleetConfig) error {
 	fm.endpointsByRole = make(map[Role][]*Endpoint)
 	for _, pool := range fm.subnets {
 		pool.Reset()
-	}
-
-	dist := cfg.Distribution
-	if dist.WindowsWorkstations < 0 || dist.LinuxServers < 0 || dist.Firewalls < 0 || dist.DNSServers < 0 || dist.WebServers < 0 {
-		return fmt.Errorf("role percentages cannot be negative")
 	}
 
 	wksCount := (cfg.TotalEndpoints * dist.WindowsWorkstations) / 100
@@ -310,7 +310,8 @@ func (fm *FleetManager) SampleRandom() *Endpoint {
 func (fm *FleetManager) SampleWeighted() *Endpoint {
 	fm.mu.RLock()
 	defer fm.mu.RUnlock()
-	if len(fm.endpoints) == 0 {
+	n := len(fm.endpoints)
+	if n == 0 {
 		return nil
 	}
 	var totalWeight float64
@@ -318,7 +319,8 @@ func (fm *FleetManager) SampleWeighted() *Endpoint {
 		totalWeight += ep.Weight
 	}
 	if totalWeight <= 0 {
-		return fm.SampleRandom()
+		idx := atomic.AddUint64(&fm.sampleCounter, 1) % uint64(n)
+		return fm.endpoints[idx]
 	}
 	fm.rngMu.Lock()
 	r := fm.rng.Float64() * totalWeight
@@ -330,7 +332,7 @@ func (fm *FleetManager) SampleWeighted() *Endpoint {
 			return ep
 		}
 	}
-	return fm.endpoints[len(fm.endpoints)-1]
+	return fm.endpoints[n-1]
 }
 
 // SampleByRole returns an endpoint matching the specified role in a thread-safe, lock-free manner.

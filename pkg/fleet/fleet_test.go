@@ -126,6 +126,69 @@ func TestRoleSampling(t *testing.T) {
 	}
 }
 
+func TestSampleWeightedDistribution(t *testing.T) {
+	fm, err := NewFleetManager(42)
+	if err != nil {
+		t.Fatalf("failed to create fleet manager: %v", err)
+	}
+
+	ep1 := &Endpoint{ID: "EP-A", Role: RoleWorkstation, Weight: 80.0}
+	ep2 := &Endpoint{ID: "EP-B", Role: RoleLinuxServer, Weight: 20.0}
+	ep3 := &Endpoint{ID: "EP-C", Role: RoleFirewall, Weight: 0.0}
+
+	fm.endpoints = []*Endpoint{ep1, ep2, ep3}
+
+	counts := make(map[string]int)
+	const samples = 1000
+	for i := 0; i < samples; i++ {
+		ep := fm.SampleWeighted()
+		if ep == nil {
+			t.Fatalf("SampleWeighted returned nil")
+		}
+		counts[ep.ID]++
+	}
+
+	if counts["EP-C"] != 0 {
+		t.Errorf("zero-weight endpoint EP-C was selected %d times, expected 0", counts["EP-C"])
+	}
+	if counts["EP-A"] < 650 || counts["EP-A"] > 950 {
+		t.Errorf("expected EP-A to receive ~80%% selections (got %d / %d)", counts["EP-A"], samples)
+	}
+	if counts["EP-B"] < 50 || counts["EP-B"] > 350 {
+		t.Errorf("expected EP-B to receive ~20%% selections (got %d / %d)", counts["EP-B"], samples)
+	}
+}
+
+func TestGenerateFleetNegativePreservesFleet(t *testing.T) {
+	fm, _ := NewFleetManager(1)
+	cfg := config.FleetConfig{
+		TotalEndpoints: 10,
+		Distribution: config.EndpointDistribution{
+			WindowsWorkstations: 100,
+		},
+	}
+	if err := fm.GenerateFleet(cfg); err != nil {
+		t.Fatalf("initial generation failed: %v", err)
+	}
+	if len(fm.Endpoints()) != 10 {
+		t.Fatalf("expected 10 endpoints, got %d", len(fm.Endpoints()))
+	}
+
+	invalidCfg := config.FleetConfig{
+		TotalEndpoints: 10,
+		Distribution: config.EndpointDistribution{
+			WindowsWorkstations: -10,
+		},
+	}
+	err := fm.GenerateFleet(invalidCfg)
+	if err == nil {
+		t.Fatalf("expected error for negative role percentage, got nil")
+	}
+	if len(fm.Endpoints()) != 10 {
+		t.Errorf("fleet was wiped upon invalid config: expected 10 endpoints, got %d", len(fm.Endpoints()))
+	}
+}
+
 func TestPIDProgression(t *testing.T) {
 	ep := &Endpoint{}
 	pid1 := ep.NextPID()
