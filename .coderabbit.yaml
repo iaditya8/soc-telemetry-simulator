@@ -1,0 +1,36 @@
+# CodeRabbit Configuration for SOC Telemetry Simulator (Go / High-Throughput Ingestion)
+version: "2"
+
+language: "en-US"
+
+tone_instructions: "Be rigorous, concise, and focused on systems engineering, memory safety, and schema conformance."
+
+reviews:
+  profile: "assertive"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "main"
+
+  tools:
+    golangci-lint:
+      enabled: true
+    shellcheck:
+      enabled: true
+
+chat:
+  auto_reply: true
+
+# Custom instructions tuned for 100k+ EPS Go engineering
+knowledge_base:
+  learnings:
+    - "This project targets 100,000+ events per second on a single machine. Flag any unnecessary heap allocations, fmt.Sprintf in hot loops, or missing sync.Pool usage."
+    - "Native raw security logs (Windows XML, Syslog RFC 5424/3164, Palo Alto CSV, BIND9 DNS) must strictly conform to documented schemas without synthetic tags."
+    - "Delivery accounting must strictly distinguish Generated, Enqueued, Submitted, Acknowledged, Dropped, and Failed events without double counting retries."
+
