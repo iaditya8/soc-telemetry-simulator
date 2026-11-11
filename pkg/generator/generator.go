@@ -20,6 +20,8 @@ type Engine struct {
 	rng          *rand.Rand
 	winFormatter   *formatter.WindowsXMLFormatter
 	linuxFormatter *formatter.LinuxSyslogFormatter
+	paFormatter    *formatter.PaloAltoFormatter
+	dnsFormatter   *formatter.BIND9Formatter
 }
 
 // NewEngine initializes the core generation engine.
@@ -37,6 +39,8 @@ func NewEngine(cfg config.SimulationConfig, fm *fleet.FleetManager, sensor Queue
 		rng:            rand.New(rand.NewSource(cfg.RandomSeed)),
 		winFormatter:   formatter.NewWindowsXMLFormatter(),
 		linuxFormatter: formatter.NewLinuxSyslogFormatter(),
+		paFormatter:    formatter.NewPaloAltoFormatter(),
+		dnsFormatter:   formatter.NewBIND9Formatter(),
 	}
 }
 
@@ -103,27 +107,12 @@ func (e *Engine) SynthesizeBaselineEventWithRNG(ep *fleet.Endpoint, buf *ByteBuf
 		e.linuxFormatter.FormatRandomLinuxEvent(buf, ep, formatter.SyslogFormatRFC3164, now, rng)
 
 	case fleet.RoleFirewall:
-		// Palo Alto Traffic Allow CSV
-		buf.AppendString("1,")
-		buf.Append(now.AppendFormat(nil, "2006/01/02 15:04:05"))
-		buf.AppendString(",001801004215,TRAFFIC,allow,2304,")
-		buf.Append(now.AppendFormat(nil, "2006/01/02 15:04:05"))
-		buf.AppendByte(',')
-		buf.AppendString(ep.IP.String())
-		buf.AppendString(",172.16.10.15,0.0.0.0,0.0.0.0,Allow-Web,,,ssl,vsys1,trust,untrust,ethernet1/1,ethernet1/2,Forward-All,")
-		buf.Append(now.AppendFormat(nil, "2006/01/02 15:04:05"))
-		buf.AppendString(",0,1,54120,443,0,0,0x0,tcp,allow,1420,0,0,12,")
-		buf.Append(now.AppendFormat(nil, "2006/01/02 15:04:05"))
-		buf.AppendString(",0,any,0,1082910,0x0,US,0,1,0,from-policy,0,0,0,0,,")
-		buf.AppendString(ep.Hostname)
-		buf.AppendString(",from-policy\n")
+		// Authentic PAN-OS 10.x/11.x Traffic Allow/Drop & Threat CSV
+		e.paFormatter.FormatRandomFirewallEvent(buf, ep, uint64(ep.NextPID()*50), now, rng)
 
 	default:
-		// Generic BIND9 DNS query
-		buf.Append(now.AppendFormat(nil, "02-Jan-2006 15:04:05.000"))
-		buf.AppendString(" client @0x7f481014a000 ")
-		buf.AppendString(ep.IP.String())
-		buf.AppendString("#51920 (portal.corp.local): query: portal.corp.local IN A + (10.200.10.1)\n")
+		// Enterprise DNS (BIND9) standard recursive query lookups and NXDOMAIN responses
+		e.dnsFormatter.FormatRandomDNSQuery(buf, ep, now, rng)
 	}
 }
 
