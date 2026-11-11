@@ -116,3 +116,13 @@ func (b *ByteBuffer) AppendTimeISO8601(t time.Time) {
 func (b *ByteBuffer) AppendTimeSyslog(t time.Time) {
 	b.buf = t.AppendFormat(b.buf, "Jan _2 15:04:05")
 }
+
+// AppendTimePANOS appends Palo Alto PAN-OS CSV timestamp: 2006/01/02 15:04:05
+func (b *ByteBuffer) AppendTimePANOS(t time.Time) {
+	b.buf = t.UTC().AppendFormat(b.buf, "2006/01/02 15:04:05")
+}
+
+// AppendTimeBIND9 appends BIND9 query log timestamp: 02-Jan-2006 15:04:05.000
+func (b *ByteBuffer) AppendTimeBIND9(t time.Time) {
+	b.buf = t.UTC().AppendFormat(b.buf, "02-Jan-2006 15:04:05.000")
+}
