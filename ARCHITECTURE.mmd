@@ -1,0 +1,32 @@
+flowchart TB
+    OP["Operator"]
+    UI["Simulator Dashboard"]
+    CTRL["Run Controller"]
+    CFG["Run Configuration"]
+    FLEET["Logical Endpoint Fleet"]
+    SCHED["Generation Scheduler / EPS Controller"]
+    TEMPL["Source Profiles and Event Templates"]
+    GEN["Raw Event Generation Engine"]
+    LEDGER[("Run Ledger / Event Metadata")]
+    QUEUE["Bounded Forwarding Queue"]
+    ROUTER["Destination Adapter"]
+    DEST["Spectra (initial SIEM destination)"]
+    REPORT["Final Simulator Report"]
+    MANUAL["Manual comparison by operator with Spectra report"]
+
+    OP --> UI --> CTRL
+    UI --> CFG
+    CTRL --> FLEET
+    CTRL --> SCHED
+    CFG --> SCHED
+    CFG --> TEMPL
+    FLEET --> GEN
+    SCHED --> GEN
+    TEMPL --> GEN
+    GEN --> LEDGER
+    GEN --> QUEUE --> ROUTER --> DEST
+    ROUTER --> LEDGER
+    CTRL --> REPORT
+    LEDGER --> REPORT
+    REPORT --> MANUAL
+    DEST -. "No automatic query/API comparison in this version" .-> MANUAL
