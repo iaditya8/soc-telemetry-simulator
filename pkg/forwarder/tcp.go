@@ -2,7 +2,9 @@ package forwarder
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -13,6 +15,9 @@ import (
 
 	"github.com/iaditya8/soc-telemetry-simulator/pkg/buffer"
 )
+
+// ErrEmbeddedNewline indicates a newline-framed payload contains an internal line feed.
+var ErrEmbeddedNewline = errors.New("forwarder: newline framing cannot carry an embedded line feed")
 
 // FramingType determines line separation over the wire.
 type FramingType int
@@ -26,17 +31,18 @@ const (
 
 // TCPConfig configures the TCP/TLS forwarder.
 type TCPConfig struct {
-	Address            string // "host:port"
-	UseTLS             bool
-	TLSConfig          *tls.Config
-	Framing            FramingType
-	ConnectTimeout     time.Duration
-	WriteTimeout       time.Duration
-	BufferSize         int // Size of internal write buffer per connection (default: 256 KB)
-	FlushInterval      time.Duration
-	AutoReconnect      bool
-	ReconnectDelay     time.Duration
-	MaxReconnectDelay  time.Duration
+	Address              string // "host:port"
+	UseTLS               bool
+	TLSConfig            *tls.Config
+	Framing              FramingType
+	ConnectTimeout       time.Duration
+	WriteTimeout         time.Duration
+	BufferSize           int // Size of internal write buffer per connection (default: 256 KB)
+	FlushInterval        time.Duration
+	AutoReconnect        bool
+	ReconnectDelay       time.Duration
+	MaxReconnectDelay    time.Duration
+	MaxReconnectAttempts int // Maximum immediate reconnection attempts (default: 3)
 }
 
 // TCPStats holds atomic transmission counters for accounting.
@@ -78,6 +84,9 @@ func NewTCPClient(cfg TCPConfig) (*TCPClient, error) {
 	if cfg.MaxReconnectDelay <= 0 {
 		cfg.MaxReconnectDelay = 2 * time.Second
 	}
+	if cfg.MaxReconnectAttempts <= 0 {
+		cfg.MaxReconnectAttempts = 3
+	}
 
 	client := &TCPClient{
 		cfg:       cfg,
@@ -100,7 +109,10 @@ func (c *TCPClient) connect() error {
 	if c.cfg.UseTLS {
 		tlsConfig := c.cfg.TLSConfig
 		if tlsConfig == nil {
-			tlsConfig = &tls.Config{InsecureSkipVerify: true}
+			// Secure default: enforce TLS 1.2+ and verify server certificates against trusted CAs
+			tlsConfig = &tls.Config{
+				MinVersion: tls.VersionTLS12,
+			}
 		}
 		conn, err = tls.DialWithDialer(dialer, "tcp", c.cfg.Address, tlsConfig)
 	} else {
@@ -150,6 +162,18 @@ func (c *TCPClient) WriteRaw(data []byte) error {
 }
 
 func (c *TCPClient) writeLocked(payload []byte) error {
+	// Reject embedded line feeds in newline-framed payloads before any bytes reach writer or connection
+	if c.cfg.Framing == FramingNewline {
+		body := payload
+		if n := len(body); n > 0 && body[n-1] == '\n' {
+			body = body[:n-1]
+		}
+		if bytes.IndexByte(body, '\n') >= 0 {
+			atomic.AddUint64(&c.stats.ErrorsCount, 1)
+			return ErrEmbeddedNewline
+		}
+	}
+
 	if c.conn == nil {
 		if !c.cfg.AutoReconnect {
 			return io.ErrClosedPipe
@@ -202,16 +226,24 @@ func (c *TCPClient) handleWriteErrorLocked(err error) error {
 	if c.conn != nil {
 		_ = c.conn.Close()
 		c.conn = nil
+		c.writer = nil
 	}
 	if !c.cfg.AutoReconnect {
 		return err
 	}
-	return c.reconnectLocked()
+	// Attempt bounded reconnection for future writes, but return the original write error
+	// so the caller is never misinformed that the failed event was submitted.
+	_ = c.reconnectLocked()
+	return fmt.Errorf("write failed: %w", err)
 }
 
 func (c *TCPClient) reconnectLocked() error {
+	maxAttempts := c.cfg.MaxReconnectAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = 3
+	}
 	delay := c.cfg.ReconnectDelay
-	for atomic.LoadUint32(&c.closed) == 0 {
+	for attempt := 0; attempt < maxAttempts && atomic.LoadUint32(&c.closed) == 0; attempt++ {
 		atomic.AddUint64(&c.stats.ReconnectsCount, 1)
 		if err := c.connect(); err == nil {
 			return nil
@@ -222,7 +254,10 @@ func (c *TCPClient) reconnectLocked() error {
 			delay = c.cfg.MaxReconnectDelay
 		}
 	}
-	return io.ErrClosedPipe
+	if atomic.LoadUint32(&c.closed) == 1 {
+		return io.ErrClosedPipe
+	}
+	return fmt.Errorf("reconnection failed after %d attempts", maxAttempts)
 }
 
 // Flush flushes any pending buffered bytes to the wire.
@@ -236,7 +271,15 @@ func (c *TCPClient) Flush() error {
 	if c.cfg.WriteTimeout > 0 {
 		_ = c.conn.SetWriteDeadline(time.Now().Add(c.cfg.WriteTimeout))
 	}
-	return c.writer.Flush()
+	err := c.writer.Flush()
+	if err != nil {
+		atomic.AddUint64(&c.stats.ErrorsCount, 1)
+		_ = c.conn.Close()
+		c.conn = nil
+		c.writer = nil
+		return fmt.Errorf("flush failed: %w", err)
+	}
+	return nil
 }
 
 func (c *TCPClient) flushLoop() {
@@ -248,7 +291,13 @@ func (c *TCPClient) flushLoop() {
 		case <-c.flushStop:
 			return
 		case <-ticker.C:
-			_ = c.Flush()
+			if err := c.Flush(); err != nil && c.cfg.AutoReconnect && atomic.LoadUint32(&c.closed) == 0 {
+				c.mu.Lock()
+				if c.conn == nil {
+					_ = c.reconnectLocked()
+				}
+				c.mu.Unlock()
+			}
 		}
 	}
 }
@@ -275,14 +324,21 @@ func (c *TCPClient) Close() error {
 	defer c.mu.Unlock()
 
 	var firstErr error
-	if c.writer != nil {
-		firstErr = c.writer.Flush()
+	if c.writer != nil && c.conn != nil {
+		// Refresh write deadline immediately before final flush
+		if c.cfg.WriteTimeout > 0 {
+			_ = c.conn.SetWriteDeadline(time.Now().Add(c.cfg.WriteTimeout))
+		}
+		if err := c.writer.Flush(); err != nil {
+			firstErr = fmt.Errorf("flush on close failed: %w", err)
+		}
 	}
 	if c.conn != nil {
 		if err := c.conn.Close(); err != nil && firstErr == nil {
 			firstErr = err
 		}
 		c.conn = nil
+		c.writer = nil
 	}
 	return firstErr
 }
@@ -367,3 +423,4 @@ func (p *TCPForwarderPool) Close() error {
 	}
 	return firstErr
 }
+

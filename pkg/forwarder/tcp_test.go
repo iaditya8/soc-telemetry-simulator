@@ -2,6 +2,7 @@ package forwarder
 
 import (
 	"bufio"
+	"errors"
 	"io"
 	"net"
 	"strconv"
@@ -28,8 +29,10 @@ func TestTCPForwarderNewlineFraming(t *testing.T) {
 
 	var receivedLines []string
 	var mu sync.Mutex
+	done := make(chan struct{})
 
 	go func() {
+		defer close(done)
 		conn, err := listener.Accept()
 		if err != nil {
 			return
@@ -52,20 +55,35 @@ func TestTCPForwarderNewlineFraming(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
-	defer client.Close()
 
 	buf := buffer.GetBuffer()
 	buf.AppendString("<86>Nov 12 05:00:00 srv01 sshd[100]: Accepted publickey")
-	_ = client.WriteEvent(buf)
+	if err := client.WriteEvent(buf); err != nil {
+		t.Fatalf("WriteEvent 1 failed: %v", err)
+	}
 	buf.Release()
 
 	buf = buffer.GetBuffer()
 	buf.AppendString("<85>Nov 12 05:00:01 srv01 sshd[101]: Failed password")
-	_ = client.WriteEvent(buf)
+	if err := client.WriteEvent(buf); err != nil {
+		t.Fatalf("WriteEvent 2 failed: %v", err)
+	}
 	buf.Release()
 
-	_ = client.Flush()
-	time.Sleep(50 * time.Millisecond)
+	if err := client.Flush(); err != nil {
+		t.Fatalf("Flush failed: %v", err)
+	}
+
+	// Close client to signal EOF to receiver and wait for clean receiver termination
+	if err := client.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for receiver goroutine")
+	}
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -86,14 +104,42 @@ func TestTCPForwarderNewlineFraming(t *testing.T) {
 	}
 }
 
+func TestTCPForwarderEmbeddedNewlineRejected(t *testing.T) {
+	listener, addr := startMockTCPListener(t)
+	defer listener.Close()
+
+	client, err := NewTCPClient(TCPConfig{
+		Address: addr,
+		Framing: FramingNewline,
+	})
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+	defer client.Close()
+
+	// Internal newline must be rejected
+	err = client.WriteRaw([]byte("<86>Line1\nLine2"))
+	if !errors.Is(err, ErrEmbeddedNewline) {
+		t.Fatalf("expected ErrEmbeddedNewline, got %v", err)
+	}
+
+	// Trailing single newline must be accepted
+	err = client.WriteRaw([]byte("<86>Line1 Single\n"))
+	if err != nil {
+		t.Fatalf("expected nil for trailing newline, got %v", err)
+	}
+}
+
 func TestTCPForwarderOctetCountingFraming(t *testing.T) {
 	listener, addr := startMockTCPListener(t)
 	defer listener.Close()
 
 	var receivedMessages []string
 	var mu sync.Mutex
+	done := make(chan struct{})
 
 	go func() {
+		defer close(done)
 		conn, err := listener.Accept()
 		if err != nil {
 			return
@@ -102,7 +148,6 @@ func TestTCPForwarderOctetCountingFraming(t *testing.T) {
 
 		reader := bufio.NewReader(conn)
 		for {
-			// Read length prefix up to ' '
 			lenStr, err := reader.ReadString(' ')
 			if err != nil {
 				return
@@ -129,16 +174,30 @@ func TestTCPForwarderOctetCountingFraming(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
-	defer client.Close()
 
 	payload1 := "<86>1 2026-11-12T05:00:00Z srv01 app 1 - - test message 1"
 	payload2 := "<86>1 2026-11-12T05:00:01Z srv01 app 2 - - test message 2"
 
-	_ = client.WriteRaw([]byte(payload1))
-	_ = client.WriteRaw([]byte(payload2))
-	_ = client.Flush()
+	if err := client.WriteRaw([]byte(payload1)); err != nil {
+		t.Fatalf("WriteRaw 1 failed: %v", err)
+	}
+	if err := client.WriteRaw([]byte(payload2)); err != nil {
+		t.Fatalf("WriteRaw 2 failed: %v", err)
+	}
+	if err := client.Flush(); err != nil {
+		t.Fatalf("Flush failed: %v", err)
+	}
 
-	time.Sleep(50 * time.Millisecond)
+	// Close client to signal EOF to receiver
+	if err := client.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for octet-counting receiver")
+	}
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -159,13 +218,17 @@ func TestTCPForwarderPool(t *testing.T) {
 	defer listener.Close()
 
 	var count uint64
+	var connWg sync.WaitGroup
+
 	go func() {
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
 				return
 			}
+			connWg.Add(1)
 			go func(c net.Conn) {
+				defer connWg.Done()
 				defer c.Close()
 				scanner := bufio.NewScanner(c)
 				for scanner.Scan() {
@@ -184,7 +247,6 @@ func TestTCPForwarderPool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create pool: %v", err)
 	}
-	defer pool.Close()
 
 	const totalEvents = 2000
 	var wg sync.WaitGroup
@@ -199,15 +261,36 @@ func TestTCPForwarderPool(t *testing.T) {
 				buf.AppendInt(int64(workerID))
 				buf.AppendString(" iteration ")
 				buf.AppendInt(int64(i))
-				_ = pool.WriteEvent(buf)
+				if err := pool.WriteEvent(buf); err != nil {
+					t.Errorf("WriteEvent failed: %v", err)
+				}
 				buf.Release()
 			}
 		}(w)
 	}
 
 	wg.Wait()
-	_ = pool.Flush()
-	time.Sleep(100 * time.Millisecond)
+	if err := pool.Flush(); err != nil {
+		t.Fatalf("pool Flush failed: %v", err)
+	}
+
+	// Close pool to cleanly tear down connections and signal EOF to all receiver scanners
+	if err := pool.Close(); err != nil {
+		t.Fatalf("pool Close failed: %v", err)
+	}
+
+	// Wait for all receiver goroutines to finish without fixed sleeps
+	receiversDone := make(chan struct{})
+	go func() {
+		connWg.Wait()
+		close(receiversDone)
+	}()
+
+	select {
+	case <-receiversDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for pool receivers to complete")
+	}
 
 	stats := pool.Stats()
 	if stats.EventsSubmitted != totalEvents {
@@ -225,18 +308,27 @@ func BenchmarkTCPStreamingThroughput(b *testing.B) {
 	}
 	defer listener.Close()
 
-	// Blackhole receiver
+	var receivedBytes uint64
+	var serverWg sync.WaitGroup
+
+	// Blackhole receiver with byte accounting
 	go func() {
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
 				return
 			}
+			serverWg.Add(1)
 			go func(c net.Conn) {
+				defer serverWg.Done()
 				defer c.Close()
 				discard := make([]byte, 64*1024)
 				for {
-					if _, err := c.Read(discard); err != nil {
+					n, err := c.Read(discard)
+					if n > 0 {
+						atomic.AddUint64(&receivedBytes, uint64(n))
+					}
+					if err != nil {
 						return
 					}
 				}
@@ -262,9 +354,23 @@ func BenchmarkTCPStreamingThroughput(b *testing.B) {
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			_ = pool.WriteRaw(samplePayload)
+			if err := pool.WriteRaw(samplePayload); err != nil {
+				b.Fatalf("WriteRaw error in benchmark: %v", err)
+			}
 		}
 	})
 
-	_ = pool.Flush()
+	if err := pool.Flush(); err != nil {
+		b.Fatalf("final Flush failed: %v", err)
+	}
+
+	// Validate delivery accounting
+	stats := pool.Stats()
+	if stats.ErrorsCount > 0 {
+		b.Fatalf("benchmark recorded %d transmission errors", stats.ErrorsCount)
+	}
+	if stats.EventsSubmitted == 0 {
+		b.Fatal("benchmark recorded 0 submitted events")
+	}
 }
+
