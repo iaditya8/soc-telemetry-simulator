@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/iaditya8/soc-telemetry-simulator/pkg/config"
@@ -18,6 +19,7 @@ type FleetManager struct {
 	endpointsByRole map[Role][]*Endpoint
 	subnets         map[SubnetZone]*SubnetPool
 	rng             *rand.Rand
+	sampleCounter   uint64
 }
 
 // NewFleetManager initializes a FleetManager with isolated subnet pools.
@@ -277,25 +279,29 @@ func (fm *FleetManager) generateMAC(b1, b2, b3 byte) net.HardwareAddr {
 	}
 }
 
-// SampleRandom returns a random endpoint from the fleet.
+// SampleRandom returns an endpoint from the fleet in a thread-safe, lock-free round-robin manner.
 func (fm *FleetManager) SampleRandom() *Endpoint {
 	fm.mu.RLock()
 	defer fm.mu.RUnlock()
-	if len(fm.endpoints) == 0 {
+	n := len(fm.endpoints)
+	if n == 0 {
 		return nil
 	}
-	return fm.endpoints[fm.rng.Intn(len(fm.endpoints))]
+	idx := atomic.AddUint64(&fm.sampleCounter, 1) % uint64(n)
+	return fm.endpoints[idx]
 }
 
-// SampleByRole returns a random endpoint matching the specified role.
+// SampleByRole returns an endpoint matching the specified role in a thread-safe, lock-free manner.
 func (fm *FleetManager) SampleByRole(role Role) (*Endpoint, error) {
 	fm.mu.RLock()
 	defer fm.mu.RUnlock()
 	group := fm.endpointsByRole[role]
-	if len(group) == 0 {
+	n := len(group)
+	if n == 0 {
 		return nil, fmt.Errorf("no endpoints found for role %s", role)
 	}
-	return group[fm.rng.Intn(len(group))], nil
+	idx := atomic.AddUint64(&fm.sampleCounter, 1) % uint64(n)
+	return group[idx], nil
 }
 
 // GetEndpoint retrieves an endpoint by its unique identifier.

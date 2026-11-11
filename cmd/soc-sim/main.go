@@ -1,12 +1,17 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/iaditya8/soc-telemetry-simulator/pkg/config"
 	"github.com/iaditya8/soc-telemetry-simulator/pkg/fleet"
+	"github.com/iaditya8/soc-telemetry-simulator/pkg/generator"
 )
 
 const (
@@ -80,7 +85,50 @@ func main() {
 
 	switch *mode {
 	case "run":
-		fmt.Println(" [Engine] Mode: Run - Ready for simulation engine execution.")
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+
+		fmt.Println(" [Engine] Starting simulation engine...")
+		engine := generator.NewEngine(cfg.Simulation, fleetMgr, nil)
+
+		startTime := time.Now()
+		go engine.Run(ctx)
+
+		// Consumer worker simulating consumer pipeline
+		go func() {
+			var eventCount uint64
+			for buf := range engine.OutputChannel() {
+				eventCount++
+				if eventCount == 1 {
+					fmt.Printf("\n--- [First Generated Sample Record] ---\n%s---------------------------------------\n\n",
+						buf.String())
+				}
+				buf.Release()
+			}
+		}()
+
+		// Real-time console status reporter
+		reportTicker := time.NewTicker(1 * time.Second)
+		defer reportTicker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				fmt.Printf("\n [Engine] Stopped by operator. Total generated: %d events in %v\n",
+					engine.Scheduler().TotalGenerated(), time.Since(startTime).Round(time.Millisecond))
+				return
+
+			case <-reportTicker.C:
+				sched := engine.Scheduler()
+				if !sched.IsRunning() {
+					fmt.Printf("\n [Engine] Simulation completed. Total generated: %d events in %v\n",
+						sched.TotalGenerated(), time.Since(startTime).Round(time.Millisecond))
+					return
+				}
+				fmt.Printf("\r [Live Monitor] Elapsed: %-6s | Active EPS: %-7d | Cumulative Events: %-9d",
+					time.Since(startTime).Round(time.Second), sched.CurrentEPS(), sched.TotalGenerated())
+			}
+		}
 	case "server":
 		fmt.Printf(" [Server] Mode: Web Dashboard Server on %s:%d\n", cfg.Server.BindAddress, cfg.Server.Port)
 	case "receiver":
