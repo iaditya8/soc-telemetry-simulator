@@ -65,11 +65,9 @@ func TestSchedulerRatePacing(t *testing.T) {
 	scheduler := NewScheduler(schedCfg, nil)
 	ctx := context.Background()
 
-	var counter int64
 	scheduler.Start(ctx, func(workerID int, quota int) {
-		for i := 0; i < quota; i++ {
-			counter++
-		}
+		// Simulates worker processing
+		time.Sleep(100 * time.Microsecond)
 	})
 
 	total := scheduler.TotalGenerated()
