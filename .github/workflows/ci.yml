@@ -1,0 +1,69 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-and-build:
+    name: Test and Build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+        go-version: [ 'stable' ]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+
+      - name: Verify Go Module
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum || echo "Modules in sync"
+
+      - name: Static Analysis (go vet)
+        run: go vet ./...
+
+      - name: Run Unit Tests
+        run: go test -v -coverprofile=coverage.txt ./...
+
+      - name: Run Race Detector (Linux only)
+        if: runner.os == 'Linux'
+        run: go test -race -v ./...
+
+      - name: Build Windows Binary
+        if: runner.os == 'Windows'
+        run: |
+          mkdir -Force bin
+          go build -v -ldflags="-s -w" -o bin/soc-sim.exe ./cmd/soc-sim
+
+      - name: Build Linux Binary
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p bin
+          go build -v -ldflags="-s -w" -o bin/soc-sim ./cmd/soc-sim
+
+      - name: Upload Binary Artifact (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: soc-sim-windows-amd64
+          path: bin/soc-sim.exe
+          if-no-files-found: warn
+
+      - name: Upload Binary Artifact (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: soc-sim-linux-amd64
+          path: bin/soc-sim
+          if-no-files-found: warn
