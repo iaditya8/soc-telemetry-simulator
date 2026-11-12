@@ -41,6 +41,9 @@ func main() {
 	durationSec := flag.Int("duration", -1, "Override duration in seconds (0 = continuous)")
 	showVersion := flag.Bool("version", false, "Display software version and exit")
 	mode := flag.String("mode", "run", "Execution mode: run, server, receiver, benchmark")
+	destTransport := flag.String("transport", "", "Override destination transport (tcp, tls, hec, http)")
+	destHost := flag.String("dest-host", "", "Override destination target host/IP")
+	destPort := flag.Int("dest-port", 0, "Override destination target port (e.g. 514, 8888)")
 	receiverTCPPort := flag.Int("receiver-tcp-port", 5140, "Mock receiver TCP port (0 to disable)")
 	receiverHECPort := flag.Int("receiver-hec-port", 8088, "Mock receiver Splunk HEC port (0 to disable)")
 	receiverToken := flag.String("receiver-token", "", "Optional required HEC token for mock receiver")
@@ -67,6 +70,15 @@ func main() {
 	}
 	if *durationSec >= 0 {
 		cfg.Simulation.DurationSeconds = *durationSec
+	}
+	if *destTransport != "" {
+		cfg.Destination.Transport = *destTransport
+	}
+	if *destHost != "" {
+		cfg.Destination.Host = *destHost
+	}
+	if *destPort > 0 {
+		cfg.Destination.Port = *destPort
 	}
 
 	fmt.Printf(" [Config] Loaded config from %s\n", *configPath)
