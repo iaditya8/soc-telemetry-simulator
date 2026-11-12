@@ -180,7 +180,7 @@ func NewHECClient(cfg HECConfig) (*HECClient, error) {
 
 	if cfg.EnableGzip {
 		level := cfg.GzipCompressionLevel
-		if level == 0 {
+		if level < gzip.HuffmanOnly || level > gzip.BestCompression {
 			level = gzip.BestSpeed
 		}
 		c.gzipPool = sync.Pool{
@@ -207,8 +207,6 @@ func (c *HECClient) WriteRaw(data []byte) error {
 	}
 
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	atomic.AddUint64(&c.stats.EventsEnqueued, 1)
 
 	if c.cfg.EndpointType == HECEndpointEvent {
@@ -224,8 +222,15 @@ func (c *HECClient) WriteRaw(data []byte) error {
 
 	c.batchEvents++
 
+	var batchData []byte
+	var sendEvents int
 	if c.batchEvents >= c.cfg.BatchMaxEvents || c.batchBuf.Len() >= c.cfg.BatchMaxBytes {
-		return c.flushBatchLocked()
+		batchData, sendEvents = c.prepareBatchLocked()
+	}
+	c.mu.Unlock()
+
+	if batchData != nil {
+		return c.dispatchBatch(batchData, sendEvents)
 	}
 
 	return nil
@@ -269,18 +274,30 @@ func (c *HECClient) appendJSONEnvelopeLocked(data []byte) {
 // Flush dispatches any pending buffered telemetry events.
 func (c *HECClient) Flush() error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.flushBatchLocked()
+	batchData, sendEvents := c.prepareBatchLocked()
+	c.mu.Unlock()
+
+	if batchData != nil {
+		return c.dispatchBatch(batchData, sendEvents)
+	}
+	return nil
 }
 
-func (c *HECClient) flushBatchLocked() error {
+func (c *HECClient) prepareBatchLocked() ([]byte, int) {
 	if c.batchEvents == 0 || c.batchBuf.Len() == 0 {
-		return nil
+		return nil, 0
 	}
 
-	eventCount := c.batchEvents
-	batchData := c.batchBuf.Bytes()
+	events := c.batchEvents
+	batchData := make([]byte, c.batchBuf.Len())
+	copy(batchData, c.batchBuf.Bytes())
 
+	c.batchBuf.Reset()
+	c.batchEvents = 0
+	return batchData, events
+}
+
+func (c *HECClient) dispatchBatch(batchData []byte, eventCount int) error {
 	var reqBody io.Reader
 	var contentEncoding string
 	var sendBytes int
@@ -305,16 +322,10 @@ func (c *HECClient) flushBatchLocked() error {
 		reqBody = bytes.NewReader(batchData)
 	}
 
-	// Reset active batch buffer for incoming writes
-	c.batchBuf.Reset()
-	c.batchEvents = 0
-
 	atomic.AddUint64(&c.stats.EventsSubmitted, uint64(eventCount))
 	atomic.AddUint64(&c.stats.BatchesSent, 1)
 	atomic.AddUint64(&c.stats.BytesSent, uint64(sendBytes))
 
-	// Send HTTP request asynchronously or inline?
-	// To maintain order and bounded memory, we execute the post
 	return c.postBatch(reqBody, eventCount, contentEncoding)
 }
 
@@ -400,3 +411,4 @@ func (c *HECClient) Close() error {
 	c.client.CloseIdleConnections()
 	return err
 }
+
