@@ -383,12 +383,28 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 				"description": "Recursive and Authoritative Enterprise DNS Resolution",
 				"sample_log":  `12-Nov-2026 06:00:00.123 client @0x7fff4001 10.100.1.5#52134 (auth.corp.internal): query: auth.corp.internal IN A +E(0)K (10.200.10.1)`,
 			},
+			{
+				"family":      "aws_cloudtrail",
+				"format":      "AWS CloudTrail Event Schema 1.08 (JSON)",
+				"event_types": []string{"DescribeInstances", "ListBuckets", "GetCallerIdentity", "ConsoleLogin", "AttachUserPolicy"},
+				"description": "Amazon Web Services Management & Data Plane Audit Telemetry",
+				"sample_log":  `{"eventVersion":"1.08","userIdentity":{"type":"IAMUser","userName":"devops"},"eventTime":"2026-11-12T08:00:00Z","eventSource":"s3.amazonaws.com","eventName":"ListBuckets","awsRegion":"us-east-1","sourceIPAddress":"198.51.100.25"}`,
+			},
+			{
+				"family":      "azure_entraid",
+				"format":      "Microsoft Entra ID (Azure AD) Audit & Sign-In Log (JSON)",
+				"event_types": []string{"InteractiveUser", "ServicePrincipal", "ConditionalAccessSuccess", "PasswordSprayFailure"},
+				"description": "Microsoft 365 & Azure Cloud Identity Authentication Telemetry",
+				"sample_log":  `{"id":"a1b2c3d4","createdDateTime":"2026-11-12T08:00:00Z","userPrincipalName":"jdoe@corp.onmicrosoft.com","appDisplayName":"Microsoft Teams","conditionalAccessStatus":"success","status":{"errorCode":0}}`,
+			},
 		},
 		"scenarios": []map[string]string{
 			{"id": "T1110.001", "name": "Password Guessing / Brute Force", "family": "windows,linux", "description": "Rapid credential guessing generating multiple failed authentications (4625 / sshd failure) followed by anomalous success."},
 			{"id": "T1046", "name": "Network Service Discovery / Port Scan", "family": "paloalto", "description": "Horizontal and vertical TCP SYN port reconnaissance traversing the enterprise firewall border."},
 			{"id": "T1071.004", "name": "Application Layer Protocol: DNS C2 Beaconing", "family": "bind9", "description": "Low-and-slow command-and-control beaconing encoded in high-entropy subdomains over recursive DNS queries."},
 			{"id": "T1059.001", "name": "Command and Scripting: Obfuscated PowerShell", "family": "windows", "description": "Process execution (4688) spawning powershell.exe with base64 encoded payload flags (-enc/-EncodedCommand)."},
+			{"id": "T1078.004", "name": "Valid Accounts: Cloud Accounts Compromise", "family": "aws_cloudtrail", "description": "AWS Console Login failure bursts followed by success and IAM administrator privilege escalation."},
+			{"id": "T1110.003", "name": "Password Spraying: Cloud Identity", "family": "azure_entraid", "description": "Horizontal password spray across multiple corporate Microsoft Entra ID accounts from foreign anonymous IPs."},
 		},
 		"forwarders": []string{"tcp", "splunk_hec", "file"},
 	}
@@ -704,6 +720,20 @@ func (s *Server) handlePreflight(w http.ResponseWriter, r *http.Request) {
 
 		bindFmt := formatter.NewBIND9Formatter()
 		bindFmt.FormatRandomDNSQuery(testBuf, sampleEP, now, rng)
+		if testBuf.Len() == 0 {
+			templatesVerified = false
+		}
+		testBuf.Reset()
+
+		ctFmt := formatter.NewAWSCloudTrailFormatter()
+		ctFmt.FormatRandomCloudTrailEvent(testBuf, sampleEP, now, rng)
+		if testBuf.Len() == 0 {
+			templatesVerified = false
+		}
+		testBuf.Reset()
+
+		entraFmt := formatter.NewEntraIDFormatter()
+		entraFmt.FormatRandomEntraIDEvent(testBuf, sampleEP, now, rng)
 		if testBuf.Len() == 0 {
 			templatesVerified = false
 		}

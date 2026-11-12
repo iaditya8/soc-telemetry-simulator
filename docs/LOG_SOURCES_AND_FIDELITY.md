@@ -133,7 +133,70 @@ To maintain scientific rigor and operational transparency, telemetry produced by
 
 ---
 
-## 6. Summary Comparison Matrix
+## 6. AWS CloudTrail Audit Telemetry (JSON Schema 1.08)
+
+- **Source Identifier:** `aws_cloudtrail`
+- **Fidelity Tier:** **Tier 2: Synthetic Schema-Conformant**
+- **Schema Reference:** AWS CloudTrail Event Reference (Schema version 1.08)
+- **Forwarding Compatibility:** Splunk HEC (`/services/collector/raw` or `/event`), Syslog TCP/TLS.
+- **Validation Method:** JSON schema parsing and key validation (`eventVersion`, `userIdentity`, `eventSource`, `eventName`, `awsRegion`, `sourceIPAddress`).
+
+### 6.1 Supported API Calls & Identity Context
+
+| Event Source | Event Name | ReadOnly | Management | Threat Mapping |
+| :--- | :--- | :---: | :---: | :--- |
+| `s3.amazonaws.com` | `ListBuckets`, `GetObject` | Yes | Yes / No | Routine data access vs bulk exfiltration |
+| `ec2.amazonaws.com` | `DescribeInstances`, `DescribeSecurityGroups` | Yes | Yes | Cloud reconnaissance |
+| `iam.amazonaws.com` | `AttachUserPolicy`, `CreateAccessKey` | No | Yes | `T1098` Privilege Escalation |
+| `signin.amazonaws.com` | `ConsoleLogin` | No | Yes | `T1078.004` Cloud Account Compromise |
+
+### 6.2 Representative Raw Log Samples
+
+#### Normal Event: Cloud Infrastructure Query (`DescribeInstances`)
+```json
+{"eventVersion":"1.08","userIdentity":{"type":"IAMUser","principalId":"AIDASYSADMIN","arn":"arn:aws:iam::123456789012:user/sysadmin","accountId":"123456789012","userName":"sysadmin"},"eventTime":"2026-11-12T08:15:30Z","eventSource":"ec2.amazonaws.com","eventName":"DescribeInstances","awsRegion":"us-east-1","sourceIPAddress":"198.51.100.25","userAgent":"aws-cli/2.15.15 Python/3.11.8 Linux/5.15.0","requestParameters":null,"responseElements":null,"requestID":"req-a1b2c3d4e5f6","eventID":"evt-12345678-abcd-ef01-2345-6789abcdef01","readOnly":true,"eventType":"AwsApiCall","managementEvent":true,"recipientAccountId":"123456789012","eventCategory":"Management"}
+```
+
+#### Suspicious Event: AWS Console Login Anomaly & Privilege Escalation (`T1078.004`)
+```json
+{"eventVersion":"1.08","userIdentity":{"type":"IAMUser","principalId":"AIDAADMIN_CLOUD","arn":"arn:aws:iam::123456789012:user/admin_cloud","accountId":"123456789012","userName":"admin_cloud"},"eventTime":"2026-11-12T08:20:15Z","eventSource":"signin.amazonaws.com","eventName":"ConsoleLogin","awsRegion":"us-east-1","sourceIPAddress":"198.51.100.199","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36","errorMessage":"Failed authentication","requestParameters":null,"responseElements":{"ConsoleLogin":"Failure"},"requestID":"req-a1b2c3d4e5f6","eventID":"evt-12345678-abcd-ef01-2345-6789abcdef01","readOnly":false,"eventType":"AwsApiCall","managementEvent":true,"recipientAccountId":"123456789012","eventCategory":"Management"}
+```
+
+---
+
+## 7. Microsoft Entra ID (Azure AD) Sign-In Logs
+
+- **Source Identifier:** `azure_entraid`
+- **Fidelity Tier:** **Tier 2: Synthetic Schema-Conformant**
+- **Schema Reference:** Microsoft Graph / Azure Monitor Sign-In & Audit Log Specification
+- **Forwarding Compatibility:** Splunk HEC, Syslog TCP/TLS.
+- **Validation Method:** JSON schema parsing and key validation (`id`, `createdDateTime`, `userPrincipalName`, `appDisplayName`, `status`, `conditionalAccessStatus`).
+
+### 7.1 Supported Attributes & Conditional Access
+
+| Attribute Name | Data Type | Description |
+| :--- | :--- | :--- |
+| `userPrincipalName` | string | Corporate cloud identity (e.g. `jdoe@corp.onmicrosoft.com`). |
+| `appDisplayName` | string | Target cloud service (e.g. `Azure Portal`, `Microsoft Teams`, `Exchange Online`). |
+| `status.errorCode` | integer | Authentication outcome (`0` = Success, `50126` = Invalid credentials, `50053` = Account locked). |
+| `conditionalAccessStatus` | string | Status of Conditional Access policies (`success`, `failure`, `notApplied`). |
+| `riskLevelAggregated` | string | Real-time identity threat scoring (`none`, `low`, `medium`, `high`). |
+
+### 7.2 Representative Raw Log Samples
+
+#### Normal Event: Cloud Portal Authentication with MFA Satisfied
+```json
+{"id":"a1b2c3d4-e5f6-7890-abcd-ef1234567890","createdDateTime":"2026-11-12T08:25:00.123456Z","userDisplayName":"John Doe","userPrincipalName":"jdoe@corp.onmicrosoft.com","userId":"user-guid-0000-1111-2222-333344445555","appId":"00000003-0000-0000-c000-000000000000","appDisplayName":"Microsoft 365 Portal","ipAddress":"198.51.100.45","clientAppUsed":"Browser","conditionalAccessStatus":"success","status":{"errorCode":0,"failureReason":null},"location":{"city":"Seattle","countryOrRegion":"US"},"riskLevelAggregated":"none","riskDetail":"none"}
+```
+
+#### Suspicious Event: Cloud Password Spray (`T1110.003`)
+```json
+{"id":"a1b2c3d4-e5f6-7890-abcd-ef1234567890","createdDateTime":"2026-11-12T08:26:45.654321Z","userDisplayName":"admin","userPrincipalName":"admin@corp.onmicrosoft.com","userId":"user-guid-0000-1111-2222-333344445555","appId":"00000003-0000-0000-c000-000000000000","appDisplayName":"Azure Active Directory PowerShell","ipAddress":"185.220.101.5","clientAppUsed":"Browser","conditionalAccessStatus":"failure","status":{"errorCode":50126,"failureReason":"Invalid username or password."},"location":{"city":"Amsterdam","countryOrRegion":"NL"},"riskLevelAggregated":"high","riskDetail":"aiGpsLocationDrift"}
+```
+
+---
+
+## 8. Summary Comparison Matrix
 
 | Source Name | Identifier | Schema Standard | Fidelity Tier | ATT&CK Techniques | Format Validation Method |
 | :--- | :--- | :--- | :---: | :--- | :--- |
@@ -141,7 +204,10 @@ To maintain scientific rigor and operational transparency, telemetry produced by
 | **Linux Syslog** | `linux_syslog` | RFC 3164 / 5424 | Tier 2 | T1110.001 | RFC 5424 Header Parsing |
 | **Palo Alto PAN-OS** | `paloalto_panos`| PAN-OS 10.x/11.x CSV | Tier 2 | T1046 | Strict 54-Column Count |
 | **ISC BIND9 DNS** | `bind9_dns` | ISC BIND 9 Query | Tier 2 | T1071.004 | BIND Client Regex Match |
+| **AWS CloudTrail** | `aws_cloudtrail`| CloudTrail JSON 1.08 | Tier 2 | T1078.004 | JSON Schema & Field Match |
+| **Microsoft Entra ID** | `azure_entraid` | Azure Monitor JSON | Tier 2 | T1110.003 | JSON Schema & Error Code Match |
 
 ### Known Format Limitations
-1. **Windows XML:** Emits UTF-8 XML directly. Windows EVTX binary compression is deliberately not implemented because SIEM forwarders (Splunk Universal Forwarder, Winlogbeat, Spectra Agent) unwrap EVTX into text/XML prior to network transport.
-2. **PAN-OS CSV:** Fixed at 54 columns matching PAN-OS standard enterprise deployments. Custom user-defined field extensions are not appended.
+1. **Windows XML:** Emits UTF-8 XML directly without binary EVTX compression.
+2. **PAN-OS CSV:** Fixed at 54 columns matching PAN-OS standard enterprise deployments.
+3. **AWS CloudTrail:** Emits individual single-record JSON streams compatible with SIEM forwarders (rather than multi-record gzip `.json.gz` digest bundles).

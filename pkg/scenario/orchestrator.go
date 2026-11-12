@@ -110,7 +110,7 @@ func (o *Orchestrator) StepSuspicious(buf *buffer.ByteBuffer, now time.Time, seq
 }
 
 func (o *Orchestrator) spawnRandomScenario(rng *rand.Rand) Scenario {
-	roll := rng.Intn(4)
+	roll := rng.Intn(6)
 	switch roll {
 	case 0:
 		// T1110.001 Brute force
@@ -141,7 +141,7 @@ func (o *Orchestrator) spawnRandomScenario(rng *rand.Rand) Scenario {
 		}
 		return NewDNSBeaconingScenario("darkmesh-c2.cc", wks, dns, 15, o.formatters)
 
-	default:
+	case 3:
 		// T1059.001 Obfuscated PowerShell
 		wks, _ := o.fleetMgr.SampleByRole(fleet.RoleWorkstation)
 		if wks == nil {
@@ -151,6 +151,32 @@ func (o *Orchestrator) spawnRandomScenario(rng *rand.Rand) Scenario {
 			return nil
 		}
 		return NewObfuscatedPowerShellScenario(wks, o.formatters)
+
+	case 4:
+		// T1078.004 Cloud Account Compromise (AWS CloudTrail)
+		ep, _ := o.fleetMgr.SampleByRole(fleet.RoleCloudAccount)
+		if ep == nil {
+			ep = o.fleetMgr.SampleWeighted()
+		}
+		if ep == nil {
+			return nil
+		}
+		return NewCloudAccountCompromiseScenario("198.51.100.199", "admin_cloud", ep, 5, o.formatters)
+
+	default:
+		// T1110.003 Cloud Password Spraying (Microsoft Entra ID)
+		ep, _ := o.fleetMgr.SampleByRole(fleet.RoleCloudAccount)
+		if ep == nil {
+			ep = o.fleetMgr.SampleWeighted()
+		}
+		if ep == nil {
+			return nil
+		}
+		domain := "corp.onmicrosoft.com"
+		if ep.Domain != "" {
+			domain = ep.Domain
+		}
+		return NewCloudPasswordSprayScenario("185.220.101.5", domain, ep, 10, o.formatters)
 	}
 }
 

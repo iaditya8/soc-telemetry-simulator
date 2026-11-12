@@ -115,6 +115,8 @@ All supported telemetry formats are **Tier 2: Synthetic Schema-Conformant** (syn
 | **Linux Syslog** | `linux_syslog` | RFC 3164 BSD & RFC 5424 Structured | `T1110.001` (SSH Brute Force) | RFC 5424 Header Regex |
 | **Firewall** | `paloalto_panos`| PAN-OS 10.x/11.x 54-Column CSV | `T1046` (Network Port Scan) | Strict 54-Column Count |
 | **DNS Server** | `bind9_dns` | ISC BIND 9 Query Standard | `T1071.004` (DNS C2 Beaconing) | BIND Client Regex Match |
+| **AWS CloudTrail** | `aws_cloudtrail`| CloudTrail JSON 1.08 | `T1078.004` (Cloud Account Compromise) | JSON Schema & Field Match |
+| **Microsoft Entra ID**| `azure_entraid` | Azure Monitor JSON | `T1110.003` (Password Spraying) | JSON Schema & Status Code Match |
 
 ---
 

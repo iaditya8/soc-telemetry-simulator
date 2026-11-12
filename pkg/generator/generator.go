@@ -23,6 +23,8 @@ type Engine struct {
 	linuxFormatter *formatter.LinuxSyslogFormatter
 	paFormatter    *formatter.PaloAltoFormatter
 	dnsFormatter   *formatter.BIND9Formatter
+	ctFormatter    *formatter.AWSCloudTrailFormatter
+	entraFormatter *formatter.EntraIDFormatter
 	orchestrator   *scenario.Orchestrator
 }
 
@@ -33,12 +35,7 @@ func NewEngine(cfg config.SimulationConfig, fm *fleet.FleetManager, sensor Queue
 		DurationSeconds: cfg.DurationSeconds,
 	}
 
-	fmts := &scenario.Formatters{
-		Windows:  formatter.NewWindowsXMLFormatter(),
-		Linux:    formatter.NewLinuxSyslogFormatter(),
-		PaloAlto: formatter.NewPaloAltoFormatter(),
-		BIND9:    formatter.NewBIND9Formatter(),
-	}
+	fmts := scenario.NewFormatters()
 	orchCfg := scenario.OrchestratorConfig{
 		SuspiciousRatio: cfg.SuspiciousRatio,
 	}
@@ -54,6 +51,8 @@ func NewEngine(cfg config.SimulationConfig, fm *fleet.FleetManager, sensor Queue
 		linuxFormatter: fmts.Linux,
 		paFormatter:    fmts.PaloAlto,
 		dnsFormatter:   fmts.BIND9,
+		ctFormatter:    fmts.CloudTrail,
+		entraFormatter: fmts.EntraID,
 		orchestrator:   orch,
 	}
 }
@@ -134,6 +133,14 @@ func (e *Engine) SynthesizeBaselineEventWithRNG(ep *fleet.Endpoint, buf *ByteBuf
 	case fleet.RoleFirewall:
 		// Authentic PAN-OS 10.x/11.x Traffic Allow/Drop & Threat CSV
 		e.paFormatter.FormatRandomFirewallEvent(buf, ep, uint64(ep.NextPID()*50), now, rng)
+
+	case fleet.RoleCloudAccount:
+		// Authentic AWS CloudTrail JSON and Microsoft Entra ID Sign-in logs
+		if rng.Intn(2) == 0 {
+			e.ctFormatter.FormatRandomCloudTrailEvent(buf, ep, now, rng)
+		} else {
+			e.entraFormatter.FormatRandomEntraIDEvent(buf, ep, now, rng)
+		}
 
 	default:
 		// Enterprise DNS (BIND9) standard recursive query lookups and NXDOMAIN responses
