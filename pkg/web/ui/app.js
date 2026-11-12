@@ -3,28 +3,92 @@ document.addEventListener("DOMContentLoaded", () => {
   const statusDot = document.getElementById("status-dot");
   const runStatus = document.getElementById("run-status");
   const uptimeDisplay = document.getElementById("uptime-display");
+  const valEps = document.getElementById("val-eps");
+  const valGenerated = document.getElementById("val-generated");
+  const valAcknowledged = document.getElementById("val-acknowledged");
+  const valDropped = document.getElementById("val-dropped");
   const btnStart = document.getElementById("btn-start");
   const btnStop = document.getElementById("btn-stop");
   const btnPreflight = document.getElementById("btn-preflight");
   const preflightBox = document.getElementById("preflight-result");
   const fleetCount = document.getElementById("fleet-count");
 
-  // Poll status every 2 seconds
+  function updateMetrics(pkt) {
+    if (pkt.state) {
+      runStatus.innerText = pkt.state;
+      if (pkt.state === "RUNNING") {
+        statusDot.className = "status-indicator running";
+        btnStart.disabled = true;
+        btnStop.disabled = false;
+      } else {
+        statusDot.className = "status-indicator";
+        btnStart.disabled = false;
+        btnStop.disabled = true;
+      }
+    }
+    if (pkt.elapsed_seconds !== undefined) {
+      uptimeDisplay.innerText = "Elapsed: " + Math.floor(pkt.elapsed_seconds) + "s";
+    }
+    if (pkt.instant_eps !== undefined) {
+      valEps.innerText = Math.round(pkt.instant_eps).toLocaleString();
+    }
+    if (pkt.total_generated !== undefined) {
+      valGenerated.innerText = pkt.total_generated.toLocaleString();
+    }
+    if (pkt.total_acknowledged !== undefined) {
+      valAcknowledged.innerText = pkt.total_acknowledged.toLocaleString();
+    }
+    if (pkt.total_dropped !== undefined) {
+      valDropped.innerText = pkt.total_dropped.toLocaleString();
+    }
+  }
+
+  // WebSocket Live Stream Connection
+  let ws = null;
+  function connectWebSocket() {
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = `${proto}//${location.host}/ws`;
+
+    ws = new WebSocket(wsUrl);
+
+    ws.onmessage = (event) => {
+      try {
+        const pkt = JSON.parse(event.data);
+        updateMetrics(pkt);
+      } catch (err) {
+        console.error("Failed to parse telemetry packet:", err);
+      }
+    };
+
+    ws.onclose = () => {
+      // Reconnect after 1.5 seconds
+      setTimeout(connectWebSocket, 1500);
+    };
+
+    ws.onerror = (err) => {
+      console.warn("WebSocket error, fallback to polling:", err);
+      ws.close();
+    };
+  }
+
+  // Fallback Polling if WebSocket is unavailable
   async function pollStatus() {
     try {
       const res = await fetch("/api/health");
       if (res.ok) {
         const data = await res.json();
-        runStatus.innerText = data.run_state;
-        uptimeDisplay.innerText = "Uptime: " + data.uptime_sec + "s";
-        if (data.run_state === "RUNNING") {
-          statusDot.className = "status-indicator running";
-          btnStart.disabled = true;
-          btnStop.disabled = false;
-        } else {
-          statusDot.className = "status-indicator";
-          btnStart.disabled = false;
-          btnStop.disabled = true;
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          runStatus.innerText = data.run_state;
+          uptimeDisplay.innerText = "Uptime: " + data.uptime_sec + "s";
+          if (data.run_state === "RUNNING") {
+            statusDot.className = "status-indicator running";
+            btnStart.disabled = true;
+            btnStop.disabled = false;
+          } else {
+            statusDot.className = "status-indicator";
+            btnStart.disabled = false;
+            btnStop.disabled = true;
+          }
         }
       }
     } catch (e) {
@@ -71,13 +135,11 @@ document.addEventListener("DOMContentLoaded", () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          generator: { target_eps: eps, duration_seconds: duration },
-          destination: { type: destType, address: destAddr }
+          simulation: { target_eps: eps, duration_seconds: duration },
+          destination: { transport: destType, host: destAddr }
         })
       });
-      if (res.ok) {
-        pollStatus();
-      } else {
+      if (!res.ok) {
         const err = await res.json();
         alert("Failed to start run: " + (err.error || "Unknown error"));
       }
@@ -94,8 +156,9 @@ document.addEventListener("DOMContentLoaded", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ force: false })
       });
-      if (res.ok) {
-        pollStatus();
+      if (!res.ok) {
+        const err = await res.json();
+        alert("Failed to stop run: " + (err.error || "Unknown error"));
       }
     } catch (e) {
       alert("Error stopping run: " + e.message);
@@ -116,6 +179,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   loadFleet();
-  pollStatus();
-  setInterval(pollStatus, 2000);
+  connectWebSocket();
+  setInterval(pollStatus, 3000);
 });
