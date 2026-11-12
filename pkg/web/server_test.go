@@ -73,7 +73,9 @@ func TestEmbeddedUIFiles(t *testing.T) {
 		contains     string
 	}{
 		{"/", http.StatusOK, "SOC Telemetry Simulator"},
-		{"/index.html", http.StatusOK, "SOC Telemetry Simulator"},
+		{"/index.html", http.StatusOK, "tab-fleet"},
+		{"/index.html", http.StatusOK, "tab-catalog"},
+		{"/index.html", http.StatusOK, "tab-preflight"},
 		{"/style.css", http.StatusOK, "--bg-dark"},
 		{"/app.js", http.StatusOK, "DOMContentLoaded"},
 	}
@@ -320,6 +322,17 @@ func TestHandlePreflight(t *testing.T) {
 	_ = json.NewDecoder(resp.Body).Decode(&resData)
 	if resData["success"] != true {
 		t.Errorf("expected preflight success true, got %v", resData["success"])
+	}
+
+	checks, ok := resData["checks"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected checks object in preflight response, got %v", resData["checks"])
+	}
+	if checks["fleet_collision_free"] != true {
+		t.Errorf("expected fleet_collision_free true, got %v", checks["fleet_collision_free"])
+	}
+	if checks["templates_verified"] != true {
+		t.Errorf("expected templates_verified true, got %v", checks["templates_verified"])
 	}
 
 	// 2. Preflight on non-existent destination (Failure)

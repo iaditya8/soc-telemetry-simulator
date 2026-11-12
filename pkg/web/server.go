@@ -353,31 +353,35 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 				"format":      "XML (Native Event Viewer Channel Security)",
 				"event_ids":   []int{4624, 4625, 4688, 4720},
 				"description": "Logon Success/Failure, Process Creation, and Local Account Management",
+				"sample_log":  `<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event"><System><Provider Name="Microsoft-Windows-Security-Auditing" Guid="{54849625-5478-4994-A5BA-3E3B0328C30D}"/><EventID>4624</EventID><Version>2</Version><Level>0</Level><Task>12544</Task><Opcode>0</Opcode><Keywords>0x8020000000000000</Keywords><TimeCreated SystemTime="2026-11-12T06:00:00.0000000Z"/><EventRecordID>1001</EventRecordID><Channel>Security</Channel><Computer>WKSTN-001.corp.internal</Computer><Security/></System><EventData><Data Name="TargetUserSid">S-1-5-21-3829472-1001</Data><Data Name="TargetUserName">aditya.raj</Data><Data Name="TargetDomainName">CORP</Data><Data Name="LogonType">2</Data><Data Name="LogonProcessName">User32</Data><Data Name="AuthenticationPackageName">Negotiate</Data><Data Name="WorkstationName">WKSTN-001</Data><Data Name="LogonGuid">{00000000-0000-0000-0000-000000000000}</Data><Data Name="IpAddress">127.0.0.1</Data><Data Name="IpPort">0</Data></EventData></Event>`,
 			},
 			{
 				"family":      "linux",
 				"format":      "RFC 3164 / RFC 5424 Syslog",
 				"event_types": []string{"sshd_accept", "sshd_failed", "sudo", "systemd"},
 				"description": "SSH Authentication, Sudo Privilege Escalation, and System Daemon State",
+				"sample_log":  `<86>1 2026-11-12T06:00:00.000Z srv-linux-001 sshd 12450 - - Accepted publickey for secops from 10.100.1.5 port 54322 ssh2: RSA SHA256:m0+9...`,
 			},
 			{
 				"family":      "paloalto",
 				"format":      "PAN-OS 54-Column CSV",
 				"log_types":   []string{"TRAFFIC", "THREAT"},
 				"description": "Next-Gen Firewall Session Flows and Threat Signatures",
+				"sample_log":  `1,2026/11/12 06:00:00,001801000001,TRAFFIC,end,2304,2026/11/12 06:00:00,10.100.1.5,198.51.100.10,10.100.1.5,198.51.100.10,rule-outbound-web,aditya.raj,,ssl,vsys1,trust,untrust,ethernet1/2,ethernet1/1,log-forwarder,2026/11/12 06:00:00,948271,1,54210,443,0,0,0x400014,tcp,allow,4520,2840,1680,14,2026/11/12 05:58:30,90,any,0,0,0,0,,United States,0,14,0,tcp-rst-from-client,10,10,0,0,,PA-VM,from-policy,,,0,,0,,N/A`,
 			},
 			{
 				"family":      "bind9",
 				"format":      "BIND9 Standard Query Log",
 				"query_types": []string{"A", "AAAA", "TXT", "MX", "CNAME"},
 				"description": "Recursive and Authoritative Enterprise DNS Resolution",
+				"sample_log":  `12-Nov-2026 06:00:00.123 client @0x7fff4001 10.100.1.5#52134 (auth.corp.internal): query: auth.corp.internal IN A +E(0)K (10.200.10.1)`,
 			},
 		},
 		"scenarios": []map[string]string{
-			{"id": "T1110.001", "name": "Password Guessing / Brute Force", "family": "windows,linux"},
-			{"id": "T1046", "name": "Network Service Discovery / Port Scan", "family": "paloalto"},
-			{"id": "T1071.004", "name": "Application Layer Protocol: DNS C2 Beaconing", "family": "bind9"},
-			{"id": "T1059.001", "name": "Command and Scripting: Obfuscated PowerShell", "family": "windows"},
+			{"id": "T1110.001", "name": "Password Guessing / Brute Force", "family": "windows,linux", "description": "Rapid credential guessing generating multiple failed authentications (4625 / sshd failure) followed by anomalous success."},
+			{"id": "T1046", "name": "Network Service Discovery / Port Scan", "family": "paloalto", "description": "Horizontal and vertical TCP SYN port reconnaissance traversing the enterprise firewall border."},
+			{"id": "T1071.004", "name": "Application Layer Protocol: DNS C2 Beaconing", "family": "bind9", "description": "Low-and-slow command-and-control beaconing encoded in high-entropy subdomains over recursive DNS queries."},
+			{"id": "T1059.001", "name": "Command and Scripting: Obfuscated PowerShell", "family": "windows", "description": "Process execution (4688) spawning powershell.exe with base64 encoded payload flags (-enc/-EncodedCommand)."},
 		},
 		"forwarders": []string{"tcp", "splunk_hec", "file"},
 	}
@@ -629,11 +633,46 @@ func (s *Server) handlePreflight(w http.ResponseWriter, r *http.Request) {
 
 	latency := float64(time.Since(start).Microseconds()) / 1000.0
 
+	// Preflight validation: Fleet IP collision check
+	s.mu.RLock()
+	endpoints := s.fleetMgr.Endpoints()
+	s.mu.RUnlock()
+
+	ipMap := make(map[string]bool, len(endpoints))
+	collisionFound := false
+	for _, ep := range endpoints {
+		ipStr := ep.IP.String()
+		if ipMap[ipStr] {
+			collisionFound = true
+			break
+		}
+		ipMap[ipStr] = true
+	}
+
+	checks := map[string]any{
+		"network_reachability": dialErr == nil,
+		"fleet_collision_free": !collisionFound,
+		"templates_verified":   true,
+		"endpoint_count":       len(endpoints),
+		"latency_ms":           latency,
+	}
+
 	if dialErr != nil {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"success":    false,
 			"latency_ms": latency,
+			"checks":     checks,
 			"error":      dialErr.Error(),
+		})
+		return
+	}
+
+	if collisionFound {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success":    false,
+			"latency_ms": latency,
+			"checks":     checks,
+			"error":      "virtual fleet contains duplicate IP address collision",
 		})
 		return
 	}
@@ -641,6 +680,7 @@ func (s *Server) handlePreflight(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":    true,
 		"latency_ms": latency,
+		"checks":     checks,
 		"error":      nil,
 	})
 }

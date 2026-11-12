@@ -3,97 +3,448 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SOC Telemetry Simulator — Control Console</title>
+  <title>SOC Telemetry Simulator — Mission Control</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <div class="app-container">
-    <header class="navbar">
-      <div class="nav-brand">
-        <span class="brand-icon">⚡</span>
+  <div class="app-layout">
+    <!-- Top Navigation Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="brand-logo">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+        </div>
         <div>
-          <h2>SOC Telemetry Simulator</h2>
-          <span class="subtext">High-Throughput Enterprise Telemetry Generator & SIEM Evaluator</span>
+          <h1 class="brand-title">SOC Telemetry Simulator</h1>
+          <span class="brand-subtitle">High-Volume Enterprise Raw Log Engine & SIEM Evaluator</span>
         </div>
       </div>
-      <div class="nav-status">
-        <span class="status-indicator" id="status-dot"></span>
-        <span id="run-status">IDLE</span>
-        <span class="uptime" id="uptime-display">Uptime: 0s</span>
+
+      <nav class="nav-tabs">
+        <button class="nav-tab active" data-tab="tab-monitor">Live Monitor</button>
+        <button class="nav-tab" data-tab="tab-fleet">Fleet Manager</button>
+        <button class="nav-tab" data-tab="tab-catalog">Event Catalog</button>
+        <button class="nav-tab" data-tab="tab-config">Run Configurator</button>
+        <button class="nav-tab" data-tab="tab-preflight">Preflight Validator</button>
+        <button class="nav-tab" data-tab="tab-reports">Reports Archive</button>
+      </nav>
+
+      <div class="header-right">
+        <div class="status-badge" id="global-status-badge">
+          <span class="status-dot" id="status-dot"></span>
+          <span id="run-status">IDLE</span>
+        </div>
+        <span class="runtime-timer" id="runtime-timer">00:00:00</span>
       </div>
     </header>
 
-    <main class="dashboard-grid">
-      <!-- Left Column: Run Controls & Preflight -->
-      <section class="card control-card">
-        <h3>Simulation Controls</h3>
-        <div class="form-group">
-          <label for="target-eps">Target EPS</label>
-          <input type="number" id="target-eps" value="10000" min="1" max="500000">
-        </div>
-        <div class="form-group">
-          <label for="duration-sec">Duration (seconds, 0 = continuous)</label>
-          <input type="number" id="duration-sec" value="60" min="0">
-        </div>
-        <div class="form-group">
-          <label for="dest-type">Destination Forwarder</label>
-          <select id="dest-type">
-            <option value="tcp">TCP / TLS Streaming</option>
-            <option value="splunk_hec">Splunk HTTP Event Collector (HEC)</option>
-            <option value="file">File Spooling</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label for="dest-addr">Destination Address</label>
-          <input type="text" id="dest-addr" value="127.0.0.1:9000">
+    <!-- Main Content Area -->
+    <main class="app-body">
+      <!-- TAB 1: LIVE MONITOR -->
+      <section id="tab-monitor" class="tab-pane active">
+        <!-- Top KPI Row -->
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <span class="kpi-title">Observed Throughput</span>
+            <div class="kpi-value-row">
+              <span class="kpi-value" id="val-eps">0</span>
+              <span class="kpi-unit">EPS</span>
+            </div>
+            <span class="kpi-sub" id="target-eps-sub">Target: 10,000 EPS</span>
+          </div>
+
+          <div class="kpi-card">
+            <span class="kpi-title">Total Generated</span>
+            <div class="kpi-value-row">
+              <span class="kpi-value" id="val-generated">0</span>
+            </div>
+            <span class="kpi-sub" id="val-split-sub">0 Normal / 0 Threat</span>
+          </div>
+
+          <div class="kpi-card">
+            <span class="kpi-title">Spectra Acknowledged</span>
+            <div class="kpi-value-row">
+              <span class="kpi-value highlight-green" id="val-acknowledged">0</span>
+            </div>
+            <span class="kpi-sub" id="val-ack-rate">100.0% Delivery Rate</span>
+          </div>
+
+          <div class="kpi-card">
+            <span class="kpi-title">Dropped / Evicted</span>
+            <div class="kpi-value-row">
+              <span class="kpi-value" id="val-dropped">0</span>
+            </div>
+            <span class="kpi-sub" id="val-dropped-sub">0 Backpressure Saturation</span>
+          </div>
         </div>
 
-        <div class="button-group">
-          <button id="btn-preflight" class="btn btn-secondary">Test Connection (Preflight)</button>
-          <button id="btn-start" class="btn btn-primary">Start Simulation</button>
-          <button id="btn-stop" class="btn btn-danger" disabled>Stop / Drain</button>
+        <!-- Middle Row: Queue Meter & Quick Run Control -->
+        <div class="dashboard-split">
+          <div class="card panel-queue">
+            <div class="panel-header">
+              <h3>Transmission Queue & Backpressure</h3>
+              <span class="badge-pill pill-normal" id="backpressure-state">Normal (&lt;70%)</span>
+            </div>
+            <div class="queue-meter-container">
+              <div class="queue-meter-bar" id="queue-meter-bar" style="width: 0%;"></div>
+            </div>
+            <div class="queue-stats">
+              <span>Depth: <strong id="queue-depth">0</strong> / <span id="queue-cap">50,000</span></span>
+              <span>Fill Ratio: <strong id="queue-pct">0.0%</strong></span>
+              <span>Memory: <strong id="mem-alloc">0 MB</strong></span>
+            </div>
+          </div>
+
+          <div class="card panel-controls">
+            <div class="panel-header">
+              <h3>Run Execution Control</h3>
+              <span id="active-run-id" class="code-pill">RUN-IDLE</span>
+            </div>
+            <div class="control-actions">
+              <button id="btn-start" class="btn btn-primary btn-large">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                Start Simulation
+              </button>
+              <button id="btn-stop" class="btn btn-danger btn-large" disabled>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12"></rect></svg>
+                Stop / Drain
+              </button>
+            </div>
+          </div>
         </div>
-        <div id="preflight-result" class="preflight-box hidden"></div>
+
+        <!-- Bottom Row: 7-State Delivery Accounting & Source Breakdown -->
+        <div class="dashboard-split">
+          <div class="card">
+            <div class="panel-header">
+              <h3>7-State Delivery Accounting</h3>
+              <span class="subtext">Exact Simulator Ground Truth</span>
+            </div>
+            <table class="data-table">
+              <thead>
+                <tr><th>State</th><th>Count</th><th>Ratio</th><th>Description</th></tr>
+              </thead>
+              <tbody id="accounting-table-body">
+                <tr><td>Generated</td><td id="acct-generated">0</td><td>100.0%</td><td>Total fleet log events</td></tr>
+                <tr><td>Normal</td><td id="acct-normal">0</td><td id="acct-normal-pct">0%</td><td>Benign business baseline</td></tr>
+                <tr><td>Suspicious</td><td id="acct-suspicious">0</td><td id="acct-suspicious-pct">0%</td><td>MITRE ATT&CK activity</td></tr>
+                <tr><td>Enqueued</td><td id="acct-enqueued">0</td><td id="acct-enqueued-pct">0%</td><td>Buffered in ring queue</td></tr>
+                <tr><td>Submitted</td><td id="acct-submitted">0</td><td id="acct-submitted-pct">0%</td><td>Transmitted on wire</td></tr>
+                <tr><td>Acknowledged</td><td id="acct-acknowledged" class="highlight-green">0</td><td id="acct-ack-pct">0%</td><td>Confirmed received by SIEM</td></tr>
+                <tr><td>Rejected / Failed</td><td id="acct-failed" class="highlight-red">0</td><td id="acct-fail-pct">0%</td><td>Receiver drop / 4xx / 5xx</td></tr>
+                <tr><td>Dropped</td><td id="acct-dropped">0</td><td id="acct-drop-pct">0%</td><td>Evicted under backpressure</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <div class="panel-header">
+              <h3>Source Family Telemetry</h3>
+              <span class="subtext">Four Native Enterprise Feeds</span>
+            </div>
+            <div class="source-grid" id="source-telemetry-grid">
+              <div class="source-item">
+                <span class="source-name">Windows XML</span>
+                <span class="source-val" id="src-windows">0</span>
+                <span class="source-format">Event Viewer 4624/4625/4688/4720</span>
+              </div>
+              <div class="source-item">
+                <span class="source-name">Linux Syslog</span>
+                <span class="source-val" id="src-linux">0</span>
+                <span class="source-format">RFC 3164 / 5424 SSH & Sudo</span>
+              </div>
+              <div class="source-item">
+                <span class="source-name">Palo Alto PAN-OS</span>
+                <span class="source-val" id="src-paloalto">0</span>
+                <span class="source-format">54-Column CSV Traffic & Threat</span>
+              </div>
+              <div class="source-item">
+                <span class="source-name">BIND9 DNS</span>
+                <span class="source-val" id="src-bind9">0</span>
+                <span class="source-format">Standard Recursive Query Log</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
-      <!-- Center Column: Telemetry Metrics & Telemetry Live Overview -->
-      <section class="card metrics-card">
-        <h3>Real-time Metrics</h3>
-        <div class="metrics-grid">
-          <div class="metric-box">
-            <span class="metric-label">Observed Wire EPS</span>
-            <span class="metric-value" id="val-eps">0</span>
+      <!-- TAB 2: FLEET MANAGER -->
+      <section id="tab-fleet" class="tab-pane">
+        <div class="card">
+          <div class="panel-header">
+            <div>
+              <h3>Virtual Logical Fleet Inventory</h3>
+              <p class="subtext">Deterministic endpoint fleet across 5 enterprise subnets with MAC, IP, and PID progression.</p>
+            </div>
+            <button id="btn-open-bulk" class="btn btn-secondary">Bulk Provision Fleet</button>
           </div>
-          <div class="metric-box">
-            <span class="metric-label">Total Generated</span>
-            <span class="metric-value" id="val-generated">0</span>
+
+          <!-- Fleet Distribution Bar -->
+          <div class="distribution-container">
+            <div class="distribution-labels">
+              <span class="dist-label dist-wks">Workstations: <strong id="lbl-wks">60%</strong></span>
+              <span class="dist-label dist-linux">Linux: <strong id="lbl-linux">20%</strong></span>
+              <span class="dist-label dist-fw">Firewalls: <strong id="lbl-fw">10%</strong></span>
+              <span class="dist-label dist-dns">DNS: <strong id="lbl-dns">5%</strong></span>
+              <span class="dist-label dist-web">Web: <strong id="lbl-web">5%</strong></span>
+            </div>
+            <div class="dist-bar-track">
+              <div class="dist-seg dist-wks" id="seg-wks" style="width: 60%;"></div>
+              <div class="dist-seg dist-linux" id="seg-linux" style="width: 20%;"></div>
+              <div class="dist-seg dist-fw" id="seg-fw" style="width: 10%;"></div>
+              <div class="dist-seg dist-dns" id="seg-dns" style="width: 5%;"></div>
+              <div class="dist-seg dist-web" id="seg-web" style="width: 5%;"></div>
+            </div>
           </div>
-          <div class="metric-box">
-            <span class="metric-label">Total Acknowledged</span>
-            <span class="metric-value" id="val-acknowledged">0</span>
+
+          <!-- Filter & Search Toolbar -->
+          <div class="toolbar-row">
+            <input type="text" id="fleet-search" class="search-input" placeholder="Filter by Hostname, IP, Role, Subnet...">
+            <span class="total-badge"><strong id="fleet-total-badge">100</strong> Logical Endpoints</span>
           </div>
-          <div class="metric-box">
-            <span class="metric-label">Dropped / Backpressure</span>
-            <span class="metric-value" id="val-dropped">0</span>
+
+          <!-- Fleet Table -->
+          <div class="table-scroll">
+            <table class="data-table" id="fleet-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Hostname</th>
+                  <th>IP Address</th>
+                  <th>Subnet Zone</th>
+                  <th>MAC Address</th>
+                  <th>Role</th>
+                  <th>Operating System</th>
+                  <th>Active PID</th>
+                  <th>Gateway</th>
+                </tr>
+              </thead>
+              <tbody id="fleet-table-body">
+                <tr><td colspan="9" style="text-align: center; color: #94a3b8;">Loading fleet inventory...</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
 
-        <h4 style="margin-top: 20px; margin-bottom: 10px; font-size: 14px; color: #94a3b8;">Active Fleet & Endpoints</h4>
-        <div id="fleet-summary" class="fleet-box">
-          <span id="fleet-count">0</span> logical endpoints provisioned.
+        <!-- Bulk Provision Modal / Drawer -->
+        <div id="bulk-modal" class="modal hidden">
+          <div class="modal-content card">
+            <div class="panel-header">
+              <h3>Bulk Provision Virtual Fleet</h3>
+              <button id="btn-close-modal" class="btn-close">&times;</button>
+            </div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Total Endpoint Count</label>
+                <input type="number" id="bulk-count" value="100" min="5" max="100000">
+              </div>
+              <div class="form-group">
+                <label>Subnet CIDR Pool</label>
+                <input type="text" id="bulk-cidr" value="10.100.0.0/16">
+              </div>
+              <div class="form-group">
+                <label>Deterministic Random Seed</label>
+                <input type="number" id="bulk-seed" value="42">
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Role Distribution Percentages (Must sum to 100%)</label>
+              <div class="distribution-inputs">
+                <div><span>Workstations:</span><input type="number" id="bulk-dist-wks" value="60">%</div>
+                <div><span>Linux Servers:</span><input type="number" id="bulk-dist-linux" value="20">%</div>
+                <div><span>Firewalls:</span><input type="number" id="bulk-dist-fw" value="10">%</div>
+                <div><span>DNS Servers:</span><input type="number" id="bulk-dist-dns" value="5">%</div>
+                <div><span>Web Servers:</span><input type="number" id="bulk-dist-web" value="5">%</div>
+              </div>
+            </div>
+            <div class="modal-actions">
+              <button id="btn-cancel-bulk" class="btn btn-secondary">Cancel</button>
+              <button id="btn-apply-bulk" class="btn btn-primary">Generate Fleet</button>
+            </div>
+          </div>
         </div>
       </section>
 
-      <!-- Right Column: Event Catalog & MITRE ATT&CK Scenarios -->
-      <section class="card catalog-card">
-        <h3>Supported Event Catalog</h3>
-        <ul id="catalog-list" class="catalog-list">
-          <li><strong>Windows Event XML:</strong> 4624, 4625, 4688, 4720</li>
-          <li><strong>Linux Syslog:</strong> SSH Auth, Sudo escalation, Systemd</li>
-          <li><strong>Palo Alto Networks:</strong> PAN-OS 54-column CSV Traffic & Threat</li>
-          <li><strong>BIND9 DNS:</strong> Standard DNS query logs</li>
-          <li><strong>MITRE ATT&CK:</strong> T1110.001, T1046, T1071.004, T1059.001</li>
-        </ul>
+      <!-- TAB 3: EVENT CATALOG -->
+      <section id="tab-catalog" class="tab-pane">
+        <div class="card">
+          <div class="panel-header">
+            <div>
+              <h3>Enterprise Telemetry Catalog & Golden Sample Logs</h3>
+              <p class="subtext">Zero-synthetic-pollution native enterprise formats. Click any card to inspect raw syntax.</p>
+            </div>
+          </div>
+
+          <div class="catalog-grid" id="catalog-cards">
+            <!-- Dynamic Catalog Cards -->
+          </div>
+
+          <!-- Raw Log Preview Drawer -->
+          <div class="raw-preview-box">
+            <div class="panel-header">
+              <h4 id="preview-title">Golden Sample Log Preview</h4>
+              <button id="btn-copy-sample" class="btn btn-secondary btn-small">Copy Raw Log</button>
+            </div>
+            <pre id="raw-log-preview" class="code-preview">Select an event source from above to view its native wire format.</pre>
+          </div>
+
+          <div class="section-title">Supported MITRE ATT&CK Scenarios</div>
+          <div class="scenarios-grid" id="scenarios-grid">
+            <!-- Dynamic Scenarios -->
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: RUN CONFIGURATOR -->
+      <section id="tab-config" class="tab-pane">
+        <div class="card">
+          <div class="panel-header">
+            <div>
+              <h3>Simulation Run Parameters</h3>
+              <p class="subtext">Tune target throughput, duration, traffic blend, and destination transport parameters.</p>
+            </div>
+            <button id="btn-save-config" class="btn btn-primary">Save & Apply Parameters</button>
+          </div>
+
+          <div class="config-sections">
+            <div class="config-section">
+              <h4>1. Generation Throughput & Duration</h4>
+              <div class="form-group">
+                <label>Target EPS: <strong id="cfg-eps-val">10,000</strong> EPS</label>
+                <input type="range" id="cfg-eps-slider" min="100" max="200000" step="100" value="10000" class="slider">
+              </div>
+              <div class="form-group">
+                <label>Duration (Seconds, 0 = Continuous Unbounded)</label>
+                <input type="number" id="cfg-duration" value="60" min="0">
+              </div>
+            </div>
+
+            <div class="config-section">
+              <h4>2. Traffic Mix (Normal vs Suspicious)</h4>
+              <div class="form-group">
+                <label>Normal Baseline Ratio: <strong id="cfg-ratio-normal">95%</strong> | Suspicious: <strong id="cfg-ratio-threat">5%</strong></label>
+                <input type="range" id="cfg-ratio-slider" min="0" max="100" value="95" class="slider">
+              </div>
+              <div class="form-group">
+                <label>Active MITRE ATT&CK Scenarios</label>
+                <div class="checkbox-group">
+                  <label><input type="checkbox" id="chk-t1110" checked> T1110.001 Brute Force</label>
+                  <label><input type="checkbox" id="chk-t1046" checked> T1046 Port Scan</label>
+                  <label><input type="checkbox" id="chk-t1071" checked> T1071.004 DNS C2 Beaconing</label>
+                  <label><input type="checkbox" id="chk-t1059" checked> T1059.001 Obfuscated PowerShell</label>
+                </div>
+              </div>
+            </div>
+
+            <div class="config-section">
+              <h4>3. Destination Transport (SIEM / Spectra)</h4>
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>Transport Mode</label>
+                  <select id="cfg-transport">
+                    <option value="tcp">Streaming TCP / Syslog (Port 514 / 5140)</option>
+                    <option value="hec">Splunk HTTP Event Collector (HEC)</option>
+                    <option value="file">File Spooling (/output/spool)</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Target Host / IP</label>
+                  <input type="text" id="cfg-host" value="127.0.0.1">
+                </div>
+                <div class="form-group">
+                  <label>Target Port</label>
+                  <input type="number" id="cfg-port" value="9000">
+                </div>
+                <div class="form-group">
+                  <label>HEC Auth Token (Masked in Reports)</label>
+                  <input type="password" id="cfg-token" placeholder="Optional token...">
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 5: PREFLIGHT VALIDATOR -->
+      <section id="tab-preflight" class="tab-pane">
+        <div class="card">
+          <div class="panel-header">
+            <div>
+              <h3>Preflight Readiness Diagnostics</h3>
+              <p class="subtext">1-Click pre-flight check testing fleet integrity, log formatters, and SIEM destination reachability.</p>
+            </div>
+            <button id="btn-run-preflight" class="btn btn-primary">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+              Run Preflight Diagnostics
+            </button>
+          </div>
+
+          <div class="diagnostic-grid">
+            <div class="diag-card" id="diag-fleet">
+              <div class="diag-icon">🛡️</div>
+              <div class="diag-title">Fleet IP Uniqueness</div>
+              <div class="diag-status status-pending" id="diag-fleet-status">Pending Check</div>
+              <div class="diag-detail" id="diag-fleet-detail">Verifies zero IP collisions across logical subnets.</div>
+            </div>
+
+            <div class="diag-card" id="diag-format">
+              <div class="diag-icon">📄</div>
+              <div class="diag-title">Formatter Integrity</div>
+              <div class="diag-status status-pending" id="diag-format-status">Pending Check</div>
+              <div class="diag-detail" id="diag-format-detail">Validates all 4 source formatters and ATT&CK templates.</div>
+            </div>
+
+            <div class="diag-card" id="diag-buffer">
+              <div class="diag-icon">⚡</div>
+              <div class="diag-title">Buffer Guardrail</div>
+              <div class="diag-status status-pending" id="diag-buffer-status">Pending Check</div>
+              <div class="diag-detail" id="diag-buffer-detail">Confirms memory footprint &lt;500 MB headroom.</div>
+            </div>
+
+            <div class="diag-card" id="diag-dest">
+              <div class="diag-icon">🌐</div>
+              <div class="diag-title">Spectra SIEM Reachability</div>
+              <div class="diag-status status-pending" id="diag-dest-status">Pending Check</div>
+              <div class="diag-detail" id="diag-dest-detail">Measures live TCP dial or HTTP ping latency.</div>
+            </div>
+          </div>
+
+          <div id="preflight-banner" class="preflight-banner hidden">
+            <!-- Overall pass/fail summary -->
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 6: REPORTS ARCHIVE -->
+      <section id="tab-reports" class="tab-pane">
+        <div class="card">
+          <div class="panel-header">
+            <div>
+              <h3>Historical Simulation Reports & Reconciliation Worksheets</h3>
+              <p class="subtext">Download immutable audit artifacts: interactive HTML with Spectra Worksheet, JSON summaries, and CSV tables.</p>
+            </div>
+            <button id="btn-refresh-reports" class="btn btn-secondary">Refresh List</button>
+          </div>
+
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Report Name</th>
+                  <th>File Format</th>
+                  <th>File Size</th>
+                  <th>Generated Timestamp</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="reports-table-body">
+                <tr><td colspan="5" style="text-align: center; color: #94a3b8;">No reports found in output archive.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </section>
     </main>
   </div>
