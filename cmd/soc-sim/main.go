@@ -13,6 +13,7 @@ import (
 
 	"github.com/iaditya8/soc-telemetry-simulator/pkg/config"
 	"github.com/iaditya8/soc-telemetry-simulator/pkg/fleet"
+	"github.com/iaditya8/soc-telemetry-simulator/pkg/forwarder"
 	"github.com/iaditya8/soc-telemetry-simulator/pkg/generator"
 	"github.com/iaditya8/soc-telemetry-simulator/pkg/mockserver"
 	"github.com/iaditya8/soc-telemetry-simulator/pkg/web"
@@ -95,13 +96,58 @@ func main() {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 
+		var fwdClient *forwarder.HECClient
+		var tcpPool *forwarder.TCPForwarderPool
+
+		switch cfg.Destination.Transport {
+		case "hec", "http", "fluentbit":
+			hecURL := fmt.Sprintf("http://%s:%d%s", cfg.Destination.Host, cfg.Destination.Port, cfg.Destination.Path)
+			if cfg.Destination.Port == 443 || cfg.Destination.TLSVerify {
+				hecURL = fmt.Sprintf("https://%s:%d%s", cfg.Destination.Host, cfg.Destination.Port, cfg.Destination.Path)
+			}
+			c, err := forwarder.NewHECClient(forwarder.HECConfig{
+				URL:            hecURL,
+				Token:          cfg.Destination.AuthToken,
+				EndpointType:   forwarder.HECEndpointCustom,
+				BatchMaxEvents: cfg.Destination.BatchSizeEvents,
+				BatchTimeout:   cfg.Destination.BatchDuration(),
+			})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, " [Error] Failed to initialize HTTP forwarder: %v\n", err)
+				os.Exit(1)
+			}
+			fwdClient = c
+			defer fwdClient.Close()
+			fmt.Printf(" [Forwarder] Connected and streaming to HTTP endpoint: %s\n", hecURL)
+
+		case "tcp", "tls":
+			addr := fmt.Sprintf("%s:%d", cfg.Destination.Host, cfg.Destination.Port)
+			pool, err := forwarder.NewTCPForwarderPool(forwarder.TCPConfig{
+				Address:       addr,
+				UseTLS:        cfg.Destination.Transport == "tls",
+				Framing:       forwarder.FramingNewline,
+				FlushInterval: cfg.Destination.BatchDuration(),
+				AutoReconnect: true,
+			}, 4)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, " [Error] Failed to initialize TCP forwarder: %v\n", err)
+				os.Exit(1)
+			}
+			tcpPool = pool
+			defer tcpPool.Close()
+			fmt.Printf(" [Forwarder] Connected and streaming to TCP endpoint: %s\n", addr)
+
+		default:
+			fmt.Println(" [Forwarder] In-memory mode (no network destination configured)")
+		}
+
 		fmt.Println(" [Engine] Starting simulation engine...")
 		engine := generator.NewEngine(cfg.Simulation, fleetMgr, nil)
 
 		startTime := time.Now()
 		go engine.Run(ctx)
 
-		// Consumer worker simulating consumer pipeline
+		// Consumer worker piping output to the selected forwarder
 		go func() {
 			var eventCount uint64
 			for buf := range engine.OutputChannel() {
@@ -109,6 +155,11 @@ func main() {
 				if eventCount == 1 {
 					fmt.Printf("\n--- [First Generated Sample Record] ---\n%s---------------------------------------\n\n",
 						buf.String())
+				}
+				if fwdClient != nil {
+					_ = fwdClient.WriteRaw(buf.Bytes())
+				} else if tcpPool != nil {
+					_ = tcpPool.WriteRaw(buf.Bytes())
 				}
 				buf.Release()
 			}
@@ -123,6 +174,17 @@ func main() {
 			case <-ctx.Done():
 				fmt.Printf("\n [Engine] Stopped by operator. Total generated: %d events in %v\n",
 					engine.Scheduler().TotalGenerated(), time.Since(startTime).Round(time.Millisecond))
+				if fwdClient != nil {
+					_ = fwdClient.Flush()
+					st := fwdClient.Stats()
+					fmt.Printf(" [Forwarder Stats] Submitted: %d | Acknowledged: %d | Rejected: %d | Failed: %d | Batches: %d | Bytes: %d\n",
+						st.EventsSubmitted, st.EventsAcknowledged, st.EventsRejected, st.EventsFailed, st.BatchesSent, st.BytesSent)
+				} else if tcpPool != nil {
+					_ = tcpPool.Flush()
+					st := tcpPool.Stats()
+					fmt.Printf(" [Forwarder Stats] Submitted: %d | Bytes: %d | Errors: %d | Reconnects: %d\n",
+						st.EventsSubmitted, st.BytesSubmitted, st.ErrorsCount, st.ReconnectsCount)
+				}
 				return
 
 			case <-reportTicker.C:
@@ -130,6 +192,17 @@ func main() {
 				if !sched.IsRunning() {
 					fmt.Printf("\n [Engine] Simulation completed. Total generated: %d events in %v\n",
 						sched.TotalGenerated(), time.Since(startTime).Round(time.Millisecond))
+					if fwdClient != nil {
+						_ = fwdClient.Flush()
+						st := fwdClient.Stats()
+						fmt.Printf(" [Forwarder Stats] Submitted: %d | Acknowledged: %d | Rejected: %d | Failed: %d | Batches: %d | Bytes: %d\n",
+							st.EventsSubmitted, st.EventsAcknowledged, st.EventsRejected, st.EventsFailed, st.BatchesSent, st.BytesSent)
+					} else if tcpPool != nil {
+						_ = tcpPool.Flush()
+						st := tcpPool.Stats()
+						fmt.Printf(" [Forwarder Stats] Submitted: %d | Bytes: %d | Errors: %d | Reconnects: %d\n",
+							st.EventsSubmitted, st.BytesSubmitted, st.ErrorsCount, st.ReconnectsCount)
+					}
 					return
 				}
 				fmt.Printf("\r [Live Monitor] Elapsed: %-6s | Active EPS: %-7d | Cumulative Events: %-9d",

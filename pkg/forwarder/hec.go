@@ -28,6 +28,8 @@ const (
 	HECEndpointRaw HECEndpointType = iota
 	// HECEndpointEvent delivers JSON objects to /services/collector/event.
 	HECEndpointEvent
+	// HECEndpointCustom delivers batches directly to the configured URL path without rewriting.
+	HECEndpointCustom
 )
 
 // HECConfig defines parameters for Splunk HEC / HTTP Bulk REST forwarder.
@@ -46,6 +48,7 @@ type HECConfig struct {
 	MaxIdleConns         int
 	MaxIdleConnsPerHost  int
 	Index                string // Optional HEC metadata header/param
+	Host                 string
 	Source               string
 	Sourcetype           string
 }
@@ -88,7 +91,7 @@ func NewHECClient(cfg HECConfig) (*HECClient, error) {
 		return nil, fmt.Errorf("forwarder: invalid HEC URL %q: %w", cfg.URL, err)
 	}
 
-	// Normalize endpoint path if user supplied base URL
+	// Normalize endpoint path if user supplied base URL without explicit collector path
 	if cfg.EndpointType == HECEndpointRaw && !strings.Contains(u.Path, "/services/collector") {
 		u.Path = strings.TrimSuffix(u.Path, "/") + "/services/collector/raw"
 	} else if cfg.EndpointType == HECEndpointEvent && !strings.Contains(u.Path, "/services/collector") {
@@ -209,8 +212,8 @@ func (c *HECClient) WriteRaw(data []byte) error {
 	c.mu.Lock()
 	atomic.AddUint64(&c.stats.EventsEnqueued, 1)
 
-	if c.cfg.EndpointType == HECEndpointEvent {
-		// Wrap event in Splunk HEC JSON envelope: {"event": ...}
+	if c.cfg.EndpointType == HECEndpointEvent || c.cfg.EndpointType == HECEndpointCustom {
+		// Wrap event in JSON envelope (HEC / Fluent Bit format)
 		c.appendJSONEnvelopeLocked(data)
 	} else {
 		// Raw endpoint: append data and trailing newline delimiter
@@ -237,9 +240,10 @@ func (c *HECClient) WriteRaw(data []byte) error {
 }
 
 func (c *HECClient) appendJSONEnvelopeLocked(data []byte) {
-	// Construct Splunk HEC event object
+	// Construct Splunk HEC / HTTP event object
 	type hecEventEnvelope struct {
 		Event      json.RawMessage `json:"event"`
+		Message    string          `json:"message,omitempty"`
 		Time       float64         `json:"time,omitempty"`
 		Host       string          `json:"host,omitempty"`
 		Source     string          `json:"source,omitempty"`
@@ -249,16 +253,20 @@ func (c *HECClient) appendJSONEnvelopeLocked(data []byte) {
 
 	// Validate if data is valid JSON; if not, quote as string
 	var rawMsg json.RawMessage
+	var rawStr string
 	if json.Valid(data) {
 		rawMsg = data
 	} else {
 		quoted, _ := json.Marshal(string(data))
 		rawMsg = quoted
+		rawStr = string(data)
 	}
 
 	env := hecEventEnvelope{
 		Event:      rawMsg,
+		Message:    rawStr,
 		Time:       float64(time.Now().UnixNano()) / 1e9,
+		Host:       c.cfg.Host,
 		Source:     c.cfg.Source,
 		Sourcetype: c.cfg.Sourcetype,
 		Index:      c.cfg.Index,
@@ -343,7 +351,7 @@ func (c *HECClient) postBatch(body io.Reader, eventCount int, contentEncoding st
 		req.Header.Set("Authorization", c.authHeader)
 	}
 
-	if c.cfg.EndpointType == HECEndpointEvent {
+	if c.cfg.EndpointType == HECEndpointEvent || c.cfg.EndpointType == HECEndpointCustom {
 		req.Header.Set("Content-Type", "application/json")
 	} else {
 		req.Header.Set("Content-Type", "text/plain; charset=utf-8")
@@ -361,7 +369,7 @@ func (c *HECClient) postBatch(body io.Reader, eventCount int, contentEncoding st
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, resp.Body)
 
-	if resp.StatusCode == http.StatusOK {
+	if resp.StatusCode >= http.StatusOK && resp.StatusCode < 300 {
 		atomic.AddUint64(&c.stats.EventsAcknowledged, uint64(eventCount))
 		return nil
 	} else if resp.StatusCode >= 400 && resp.StatusCode < 500 {

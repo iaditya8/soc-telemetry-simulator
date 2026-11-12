@@ -20,13 +20,13 @@ fleet:
     web_servers: 5
 
 destination:
-  transport: "tcp" # options: "tcp", "tls", "hec", "file", "mock"
+  transport: "hec" # options: "tcp", "tls", "hec", "file", "mock" (hec handles Splunk HEC and Fluent Bit HTTP)
   host: "127.0.0.1"
-  port: 514
-  path: "/services/collector/raw"
+  port: 8888
+  path: "/http.events"
   auth_token: ""
   tls_verify: false
-  batch_size_events: 2000
+  batch_size_events: 500
   batch_flush_timeout_ms: 100
   queue_capacity: 50000
   overflow_policy: "pause" # options: "pause", "drop"

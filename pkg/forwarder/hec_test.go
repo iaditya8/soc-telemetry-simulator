@@ -2,12 +2,14 @@ package forwarder
 
 import (
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -276,6 +278,68 @@ func TestHECDeliveryAccountingRejectionAndFailure(t *testing.T) {
 	failStats := goodClient.Stats()
 	if failStats.EventsFailed != 15 {
 		t.Errorf("expected 15 events failed, got %d", failStats.EventsFailed)
+	}
+}
+
+func TestHECCustomHTTPAndCreatedStatus(t *testing.T) {
+	var receivedPath string
+	var receivedBody bytes.Buffer
+	var mu sync.Mutex
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		receivedPath = r.URL.Path
+		_, _ = io.Copy(&receivedBody, r.Body)
+		mu.Unlock()
+
+		// Fluent Bit returns 201 Created for HTTP input
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+
+	customURL := server.URL + "/http.events"
+	client, err := NewHECClient(HECConfig{
+		URL:            customURL,
+		EndpointType:   HECEndpointCustom,
+		Host:           "sim-wkstn-001",
+		BatchMaxEvents: 10,
+		BatchTimeout:   20 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+	defer client.Close()
+
+	if err := client.WriteRaw([]byte("<Event><EventID>4624</EventID></Event>")); err != nil {
+		t.Fatalf("failed to write raw: %v", err)
+	}
+
+	if err := client.Flush(); err != nil {
+		t.Fatalf("Flush failed: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if receivedPath != "/http.events" {
+		t.Errorf("expected path /http.events, got %q", receivedPath)
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal(receivedBody.Bytes(), &parsed); err != nil {
+		t.Fatalf("failed to parse received JSON: %v, raw: %s", err, receivedBody.String())
+	}
+
+	if parsed["host"] != "sim-wkstn-001" {
+		t.Errorf("expected host 'sim-wkstn-001', got %v", parsed["host"])
+	}
+	if parsed["message"] != "<Event><EventID>4624</EventID></Event>" {
+		t.Errorf("expected message '<Event><EventID>4624</EventID></Event>', got %v", parsed["message"])
+	}
+
+	stats := client.Stats()
+	if stats.EventsAcknowledged != 1 {
+		t.Errorf("expected 1 event acknowledged, got %d", stats.EventsAcknowledged)
 	}
 }
 
