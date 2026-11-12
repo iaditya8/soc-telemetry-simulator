@@ -12,6 +12,7 @@ import (
 	"github.com/iaditya8/soc-telemetry-simulator/pkg/config"
 	"github.com/iaditya8/soc-telemetry-simulator/pkg/fleet"
 	"github.com/iaditya8/soc-telemetry-simulator/pkg/generator"
+	"github.com/iaditya8/soc-telemetry-simulator/pkg/mockserver"
 )
 
 const (
@@ -36,6 +37,9 @@ func main() {
 	durationSec := flag.Int("duration", -1, "Override duration in seconds (0 = continuous)")
 	showVersion := flag.Bool("version", false, "Display software version and exit")
 	mode := flag.String("mode", "run", "Execution mode: run, server, receiver")
+	receiverTCPPort := flag.Int("receiver-tcp-port", 5140, "Mock receiver TCP port (0 to disable)")
+	receiverHECPort := flag.Int("receiver-hec-port", 8088, "Mock receiver Splunk HEC port (0 to disable)")
+	receiverToken := flag.String("receiver-token", "", "Optional required HEC token for mock receiver")
 
 	flag.Parse()
 
@@ -132,7 +136,56 @@ func main() {
 	case "server":
 		fmt.Printf(" [Server] Mode: Web Dashboard Server on %s:%d\n", cfg.Server.BindAddress, cfg.Server.Port)
 	case "receiver":
-		fmt.Printf(" [Receiver] Mode: Mock Spectra Receiver listening on port %d\n", cfg.Destination.Port)
+		tcpAddr := ""
+		if *receiverTCPPort > 0 {
+			tcpAddr = fmt.Sprintf(":%d", *receiverTCPPort)
+		}
+		hecAddr := ""
+		if *receiverHECPort > 0 {
+			hecAddr = fmt.Sprintf(":%d", *receiverHECPort)
+		}
+
+		rcv := mockserver.NewMockReceiver(mockserver.ReceiverConfig{
+			TCPAddr:       tcpAddr,
+			HECAddr:       hecAddr,
+			ExpectedToken: *receiverToken,
+		})
+
+		if err := rcv.Start(); err != nil {
+			fmt.Fprintf(os.Stderr, " [Error] Failed to start mock receiver: %v\n", err)
+			os.Exit(1)
+		}
+		defer rcv.Close()
+
+		fmt.Printf(" [Receiver] Standalone Mock Spectra SIEM Receiver running!\n")
+		if tcpAddr != "" {
+			fmt.Printf("   -> TCP/Syslog Endpoint: %s (newline & RFC 5424)\n", rcv.TCPAddr())
+		}
+		if hecAddr != "" {
+			fmt.Printf("   -> Splunk HEC Endpoint: http://%s/services/collector/{raw,event}\n", rcv.HECAddr())
+		}
+		fmt.Printf(" [Receiver] Press Ctrl+C to terminate.\n\n")
+
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+
+		startTime := time.Now()
+		for {
+			select {
+			case <-ctx.Done():
+				st := rcv.Stats()
+				fmt.Printf("\n\n [Receiver] Stopped. Cumulative Ingest: %d events (%.2f MB) in %v\n",
+					st.EventsReceived, float64(st.BytesReceived)/(1024*1024), time.Since(startTime).Round(time.Millisecond))
+				return
+			case <-ticker.C:
+				st := rcv.Stats()
+				fmt.Printf("\r [Receiver Live] Elapsed: %-6s | Current Ingest EPS: %-8.0f | Events: %-10d | Inbound: %-6.2f MB",
+					time.Since(startTime).Round(time.Second), st.CurrentEPS, st.EventsReceived, float64(st.BytesReceived)/(1024*1024))
+			}
+		}
 	default:
 		fmt.Fprintf(os.Stderr, " [Error] Unknown mode %q (expected: run, server, receiver)\n", *mode)
 		os.Exit(1)
