@@ -334,6 +334,9 @@ func TestHandlePreflight(t *testing.T) {
 	if checks["templates_verified"] != true {
 		t.Errorf("expected templates_verified true, got %v", checks["templates_verified"])
 	}
+	if checks["memory_guardrail_ok"] != true {
+		t.Errorf("expected memory_guardrail_ok true, got %v", checks["memory_guardrail_ok"])
+	}
 
 	// 2. Preflight on non-existent destination (Failure)
 	preflightReqFail := PreflightRequest{

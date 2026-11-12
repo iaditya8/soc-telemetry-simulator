@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -17,8 +18,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/iaditya8/soc-telemetry-simulator/pkg/buffer"
 	"github.com/iaditya8/soc-telemetry-simulator/pkg/config"
 	"github.com/iaditya8/soc-telemetry-simulator/pkg/fleet"
+	"github.com/iaditya8/soc-telemetry-simulator/pkg/formatter"
 	"github.com/iaditya8/soc-telemetry-simulator/pkg/ledger"
 	"github.com/iaditya8/soc-telemetry-simulator/pkg/report"
 )
@@ -250,8 +253,12 @@ func (s *Server) handleFleet(w http.ResponseWriter, r *http.Request) {
 
 	q := r.URL.Query()
 	if l := q.Get("limit"); l != "" {
-		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
-			limit = parsed
+		if parsed, err := strconv.Atoi(l); err == nil {
+			if parsed <= 0 {
+				limit = total
+			} else {
+				limit = parsed
+			}
 		}
 	}
 	if o := q.Get("offset"); o != "" {
@@ -367,7 +374,7 @@ func (s *Server) handleCatalog(w http.ResponseWriter, r *http.Request) {
 				"format":      "PAN-OS 54-Column CSV",
 				"log_types":   []string{"TRAFFIC", "THREAT"},
 				"description": "Next-Gen Firewall Session Flows and Threat Signatures",
-				"sample_log":  `1,2026/11/12 06:00:00,001801000001,TRAFFIC,end,2304,2026/11/12 06:00:00,10.100.1.5,198.51.100.10,10.100.1.5,198.51.100.10,rule-outbound-web,aditya.raj,,ssl,vsys1,trust,untrust,ethernet1/2,ethernet1/1,log-forwarder,2026/11/12 06:00:00,948271,1,54210,443,0,0,0x400014,tcp,allow,4520,2840,1680,14,2026/11/12 05:58:30,90,any,0,0,0,0,,United States,0,14,0,tcp-rst-from-client,10,10,0,0,,PA-VM,from-policy,,,0,,0,,N/A`,
+				"sample_log":  `1,2026/11/12 04:30:00,001801004215,TRAFFIC,allow,2304,2026/11/12 04:30:00,10.100.1.15,172.16.10.15,0.0.0.0,0.0.0.0,Allow-Web-Outbound,,secops,ssl,vsys1,trust,untrust,ethernet1/1,ethernet1/2,All-Traffic,2026/11/12 04:30:00,1082910,1,54120,443,0,0,0x0,tcp,allow,6000,1000,5000,20,2026/11/12 04:29:50,10,any,0,1082910,0x0,US,US,0,8,12,aged-out,0,0,0,0,,pa-perim-fw01,from-policy`,
 			},
 			{
 				"family":      "bind9",
@@ -485,11 +492,19 @@ func (s *Server) runSimulationWorker(ctx context.Context, runID string, cfg conf
 			}
 			norm := uint64(float64(step) * cfg.Simulation.NormalRatio)
 			susp := step - norm
+
+			scenarios := cfg.Simulation.ActiveScenarios
+			if len(scenarios) == 0 {
+				norm = step
+				susp = 0
+			}
+
 			if norm > 0 {
 				s.accounting.RecordGenerated("windows", "", 1, ledger.ClassNormal, norm)
 			}
 			if susp > 0 {
-				s.accounting.RecordGenerated("windows", "T1110.001", 1, ledger.ClassSuspicious, susp)
+				scenarioID := scenarios[step%uint64(len(scenarios))]
+				s.accounting.RecordGenerated("windows", scenarioID, 1, ledger.ClassSuspicious, susp)
 			}
 			s.accounting.RecordEnqueued("windows", step)
 			s.accounting.RecordSubmitted("windows", step)
@@ -604,7 +619,16 @@ func (s *Server) handlePreflight(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	var dialErr error
 
-	if req.Type == "splunk_hec" || strings.HasPrefix(req.Address, "http://") || strings.HasPrefix(req.Address, "https://") {
+	if req.Type == "file" {
+		// File spooling readiness check
+		spoolDir := req.Address
+		if spoolDir == "" {
+			spoolDir = "./output/spool"
+		}
+		if err := os.MkdirAll(spoolDir, 0755); err != nil {
+			dialErr = fmt.Errorf("file spool output directory inaccessible: %w", err)
+		}
+	} else if req.Type == "splunk_hec" || req.Type == "hec" || strings.HasPrefix(req.Address, "http://") || strings.HasPrefix(req.Address, "https://") {
 		url := req.Address
 		if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
 			if req.TLS {
@@ -633,7 +657,7 @@ func (s *Server) handlePreflight(w http.ResponseWriter, r *http.Request) {
 
 	latency := float64(time.Since(start).Microseconds()) / 1000.0
 
-	// Preflight validation: Fleet IP collision check
+	// Preflight validation 1: Fleet IP collision check
 	s.mu.RLock()
 	endpoints := s.fleetMgr.Endpoints()
 	s.mu.RUnlock()
@@ -649,10 +673,56 @@ func (s *Server) handlePreflight(w http.ResponseWriter, r *http.Request) {
 		ipMap[ipStr] = true
 	}
 
+	// Preflight validation 2: Real template and formatter integrity verification
+	templatesVerified := true
+	testBuf := buffer.GetBuffer()
+	if len(endpoints) > 0 {
+		sampleEP := endpoints[0]
+		now := time.Now()
+		rng := rand.New(rand.NewSource(42))
+
+		winFmt := formatter.NewWindowsXMLFormatter()
+		winFmt.FormatRandomEvent(testBuf, sampleEP, 1, now, rng)
+		if testBuf.Len() == 0 {
+			templatesVerified = false
+		}
+		testBuf.Reset()
+
+		linuxFmt := formatter.NewLinuxSyslogFormatter()
+		linuxFmt.FormatRandomLinuxEvent(testBuf, sampleEP, formatter.SyslogFormatRFC5424, now, rng)
+		if testBuf.Len() == 0 {
+			templatesVerified = false
+		}
+		testBuf.Reset()
+
+		paloFmt := formatter.NewPaloAltoFormatter()
+		paloFmt.FormatRandomFirewallEvent(testBuf, sampleEP, 1, now, rng)
+		if testBuf.Len() == 0 {
+			templatesVerified = false
+		}
+		testBuf.Reset()
+
+		bindFmt := formatter.NewBIND9Formatter()
+		bindFmt.FormatRandomDNSQuery(testBuf, sampleEP, now, rng)
+		if testBuf.Len() == 0 {
+			templatesVerified = false
+		}
+		testBuf.Reset()
+	}
+	testBuf.Release()
+
+	// Preflight validation 3: Real memory allocation guardrail check
+	var memStats runtime.MemStats
+	runtime.ReadMemStats(&memStats)
+	memAllocMB := float64(memStats.Alloc) / (1024 * 1024)
+	memGuardrailOK := memAllocMB < 500.0
+
 	checks := map[string]any{
 		"network_reachability": dialErr == nil,
 		"fleet_collision_free": !collisionFound,
-		"templates_verified":   true,
+		"templates_verified":   templatesVerified,
+		"memory_guardrail_ok":  memGuardrailOK,
+		"memory_alloc_mb":      memAllocMB,
 		"endpoint_count":       len(endpoints),
 		"latency_ms":           latency,
 	}
@@ -673,6 +743,26 @@ func (s *Server) handlePreflight(w http.ResponseWriter, r *http.Request) {
 			"latency_ms": latency,
 			"checks":     checks,
 			"error":      "virtual fleet contains duplicate IP address collision",
+		})
+		return
+	}
+
+	if !templatesVerified {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success":    false,
+			"latency_ms": latency,
+			"checks":     checks,
+			"error":      "event log templates failed formatter verification check",
+		})
+		return
+	}
+
+	if !memGuardrailOK {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success":    false,
+			"latency_ms": latency,
+			"checks":     checks,
+			"error":      fmt.Sprintf("memory footprint (%.1f MB) exceeds 500 MB guardrail", memAllocMB),
 		})
 		return
 	}

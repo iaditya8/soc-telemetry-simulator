@@ -1,14 +1,18 @@
 // SOC Telemetry Simulator — Single-Page Dashboard Controller
 document.addEventListener("DOMContentLoaded", () => {
-  // Navigation Tabs Switching
+  // Navigation Tabs Switching (with ARIA tab semantics)
   const navTabs = document.querySelectorAll(".nav-tab");
   const tabPanes = document.querySelectorAll(".tab-pane");
 
   navTabs.forEach((tab) => {
     tab.addEventListener("click", () => {
-      navTabs.forEach((t) => t.classList.remove("active"));
+      navTabs.forEach((t) => {
+        t.classList.remove("active");
+        t.setAttribute("aria-selected", "false");
+      });
       tabPanes.forEach((p) => p.classList.remove("active"));
       tab.classList.add("active");
+      tab.setAttribute("aria-selected", "true");
       const targetPane = document.getElementById(tab.dataset.tab);
       if (targetPane) targetPane.classList.add("active");
 
@@ -66,6 +70,28 @@ document.addEventListener("DOMContentLoaded", () => {
   const srcPalo = document.getElementById("src-paloalto");
   const srcBind = document.getElementById("src-bind9");
 
+  // Preflight gating state
+  let preflightPassed = false;
+
+  function invalidatePreflight() {
+    preflightPassed = false;
+    if (runStatus.innerText !== "RUNNING") {
+      btnStart.disabled = true;
+      btnStart.title = "Preflight validation required before starting run";
+    }
+    const diagFleet = document.getElementById("diag-fleet-status");
+    const diagFormat = document.getElementById("diag-format-status");
+    const diagBuffer = document.getElementById("diag-buffer-status");
+    const diagDest = document.getElementById("diag-dest-status");
+    const banner = document.getElementById("preflight-banner");
+
+    if (diagFleet) { diagFleet.className = "diag-status status-pending"; diagFleet.innerText = "Pending Check"; }
+    if (diagFormat) { diagFormat.className = "diag-status status-pending"; diagFormat.innerText = "Pending Check"; }
+    if (diagBuffer) { diagBuffer.className = "diag-status status-pending"; diagBuffer.innerText = "Pending Check"; }
+    if (diagDest) { diagDest.className = "diag-status status-pending"; diagDest.innerText = "Pending Check"; }
+    if (banner) banner.classList.add("hidden");
+  }
+
   // Telemetry updates
   function updateTelemetry(pkt) {
     if (!pkt) return;
@@ -78,7 +104,8 @@ document.addEventListener("DOMContentLoaded", () => {
         btnStop.disabled = false;
       } else {
         statusDot.className = "status-dot";
-        btnStart.disabled = false;
+        btnStart.disabled = !preflightPassed;
+        btnStart.title = preflightPassed ? "Start Simulation Run" : "Preflight validation required before starting run";
         btnStop.disabled = true;
       }
     }
@@ -197,7 +224,8 @@ document.addEventListener("DOMContentLoaded", () => {
             btnStop.disabled = false;
           } else {
             statusDot.className = "status-dot";
-            btnStart.disabled = false;
+            btnStart.disabled = !preflightPassed;
+            btnStart.title = preflightPassed ? "Start Simulation Run" : "Preflight validation required before starting run";
             btnStop.disabled = true;
           }
         }
@@ -209,6 +237,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Run Controls
   btnStart.addEventListener("click", async () => {
+    if (!preflightPassed) {
+      alert("Preflight diagnostics must be run and passed before starting the simulation.");
+      return;
+    }
     const eps = parseInt(document.getElementById("cfg-eps-slider").value, 10);
     const duration = parseInt(document.getElementById("cfg-duration").value, 10);
     const transport = document.getElementById("cfg-transport").value;
@@ -216,6 +248,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const port = parseInt(document.getElementById("cfg-port").value, 10);
     const token = document.getElementById("cfg-token").value;
     const normRatio = parseInt(document.getElementById("cfg-ratio-slider").value, 10) / 100.0;
+
+    const activeScenarios = [];
+    if (document.getElementById("chk-t1110").checked) activeScenarios.push("T1110.001");
+    if (document.getElementById("chk-t1046").checked) activeScenarios.push("T1046");
+    if (document.getElementById("chk-t1071").checked) activeScenarios.push("T1071.004");
+    if (document.getElementById("chk-t1059").checked) activeScenarios.push("T1059.001");
 
     try {
       const res = await fetch("/api/run/start", {
@@ -226,7 +264,8 @@ document.addEventListener("DOMContentLoaded", () => {
             target_eps: eps,
             duration_seconds: duration,
             normal_ratio: normRatio,
-            suspicious_ratio: 1.0 - normRatio
+            suspicious_ratio: 1.0 - normRatio,
+            active_scenarios: activeScenarios
           },
           destination: {
             transport: transport,
@@ -269,7 +308,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function loadFleet() {
     try {
-      const res = await fetch("/api/fleet?limit=250");
+      const res = await fetch("/api/fleet?limit=-1");
       if (res.ok) {
         const data = await res.json();
         cachedFleet = data.endpoints || [];
@@ -324,7 +363,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("btn-apply-bulk").addEventListener("click", async () => {
     const count = parseInt(document.getElementById("bulk-count").value, 10);
-    const cidr = document.getElementById("bulk-cidr").value;
     const seed = parseInt(document.getElementById("bulk-seed").value, 10);
     const wks = parseInt(document.getElementById("bulk-dist-wks").value, 10);
     const linux = parseInt(document.getElementById("bulk-dist-linux").value, 10);
@@ -343,7 +381,6 @@ document.addEventListener("DOMContentLoaded", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           count: count,
-          subnet_cidr: cidr,
           seed: seed,
           distribution: {
             windows_workstations: wks,
@@ -357,6 +394,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (res.ok) {
         bulkModal.classList.add("hidden");
         loadFleet();
+        invalidatePreflight();
         // Update distribution bars
         document.getElementById("lbl-wks").innerText = wks + "%";
         document.getElementById("lbl-linux").innerText = linux + "%";
@@ -370,10 +408,10 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("seg-web").style.width = web + "%";
       } else {
         const err = await res.json();
-        alert("Failed to provision fleet: " + (err.error || "Unknown error"));
+        alert("Bulk fleet provisioning failed: " + (err.error || "Unknown error"));
       }
     } catch (e) {
-      alert("Error: " + e.message);
+      alert("Error provisioning fleet: " + e.message);
     }
   });
 
@@ -401,10 +439,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!cat) return;
 
     catalogCards.innerHTML = (cat.sources || []).map((s, idx) => `
-      <div class="catalog-card ${idx === 0 ? "selected" : ""}" data-idx="${idx}">
+      <button type="button" class="catalog-card ${idx === 0 ? "selected" : ""}" data-idx="${idx}" aria-pressed="${idx === 0 ? "true" : "false"}">
         <h4>${s.family.toUpperCase()} — ${s.format}</h4>
         <p>${s.description}</p>
-      </div>
+      </button>
     `).join("");
 
     scenariosGrid.innerHTML = (cat.scenarios || []).map((sc) => `
@@ -421,8 +459,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     document.querySelectorAll(".catalog-card").forEach((card) => {
       card.addEventListener("click", () => {
-        document.querySelectorAll(".catalog-card").forEach((c) => c.classList.remove("selected"));
+        document.querySelectorAll(".catalog-card").forEach((c) => {
+          c.classList.remove("selected");
+          c.setAttribute("aria-pressed", "false");
+        });
         card.classList.add("selected");
+        card.setAttribute("aria-pressed", "true");
         const idx = parseInt(card.dataset.idx, 10);
         showSample(cat.sources[idx]);
       });
@@ -461,6 +503,16 @@ document.addEventListener("DOMContentLoaded", () => {
     alert("Configuration parameters saved successfully for the next simulation run!");
   });
 
+  // Invalidate preflight on configuration changes
+  ["cfg-eps-slider", "cfg-duration", "cfg-ratio-slider", "cfg-transport", "cfg-host", "cfg-port", "cfg-token"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("input", invalidatePreflight);
+  });
+  ["chk-t1110", "chk-t1046", "chk-t1071", "chk-t1059"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("change", invalidatePreflight);
+  });
+
   // PREFLIGHT VALIDATOR TAB
   const btnRunPreflight = document.getElementById("btn-run-preflight");
   const diagFleetStatus = document.getElementById("diag-fleet-status");
@@ -484,7 +536,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const transport = document.getElementById("cfg-transport").value;
     const host = document.getElementById("cfg-host").value;
     const port = document.getElementById("cfg-port").value;
-    const address = `${host}:${port}`;
+    let address = `${host}:${port}`;
+    if (transport === "file") {
+      address = "./output/spool";
+    }
 
     try {
       const res = await fetch("/api/preflight", {
@@ -494,7 +549,7 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       const data = await res.json();
 
-      // Fleet check
+      // 1. Fleet collision check
       if (data.checks && data.checks.fleet_collision_free) {
         diagFleetStatus.className = "diag-status status-passed";
         diagFleetStatus.innerText = "✓ Passed (0 Collisions)";
@@ -503,32 +558,57 @@ document.addEventListener("DOMContentLoaded", () => {
         diagFleetStatus.innerText = "✗ Failed (Collision Detected)";
       }
 
-      // Formatters check
-      diagFormatStatus.className = "diag-status status-passed";
-      diagFormatStatus.innerText = "✓ Verified (4 Sources Ready)";
+      // 2. Formatters integrity check (real execution)
+      if (data.checks && data.checks.templates_verified) {
+        diagFormatStatus.className = "diag-status status-passed";
+        diagFormatStatus.innerText = "✓ Verified (4 Sources Ready)";
+      } else {
+        diagFormatStatus.className = "diag-status status-failed";
+        diagFormatStatus.innerText = "✗ Template Verification Failed";
+      }
 
-      // Buffer guardrail check
-      diagBufferStatus.className = "diag-status status-passed";
-      diagBufferStatus.innerText = "✓ Verified (<500 MB Cap)";
+      // 3. Buffer guardrail check (real memory footprint)
+      if (data.checks && data.checks.memory_guardrail_ok) {
+        const memMB = data.checks.memory_alloc_mb !== undefined ? data.checks.memory_alloc_mb.toFixed(1) : "<500";
+        diagBufferStatus.className = "diag-status status-passed";
+        diagBufferStatus.innerText = `✓ Verified (${memMB} MB / <500 MB Cap)`;
+      } else {
+        const memMB = data.checks && data.checks.memory_alloc_mb !== undefined ? data.checks.memory_alloc_mb.toFixed(1) : ">500";
+        diagBufferStatus.className = "diag-status status-failed";
+        diagBufferStatus.innerText = `✗ Warning: High Allocation (${memMB} MB)`;
+      }
 
-      // Reachability check
-      if (data.success) {
+      // 4. Reachability check (evaluate network_reachability directly)
+      const networkOK = data.checks && data.checks.network_reachability;
+      if (networkOK) {
         diagDestStatus.className = "diag-status status-passed";
         diagDestStatus.innerText = `✓ Reachable (${data.latency_ms.toFixed(1)} ms)`;
-        diagDestDetail.innerText = `Confirmed active network handshake with ${address}`;
-
-        preflightBanner.className = "preflight-banner success";
-        preflightBanner.innerHTML = `✓ PREFLIGHT PASSED: Simulator is fully primed and validated for 100,000+ EPS transmission.`;
+        diagDestDetail.innerText = transport === "file" ? `Confirmed directory accessibility at ${address}` : `Confirmed active network handshake with ${address}`;
       } else {
         diagDestStatus.className = "diag-status status-failed";
         diagDestStatus.innerText = `✗ Destination Unreachable`;
         diagDestDetail.innerText = data.error || "Connection timed out";
+      }
 
+      // Overall Preflight Status & Start Button Gating
+      if (data.success) {
+        preflightPassed = true;
+        btnStart.disabled = false;
+        btnStart.title = "Start Simulation Run";
+        preflightBanner.className = "preflight-banner success";
+        preflightBanner.innerHTML = `✓ PREFLIGHT PASSED: Simulator is fully primed and validated for 100,000+ EPS transmission.`;
+      } else {
+        preflightPassed = false;
+        btnStart.disabled = true;
+        btnStart.title = "Preflight validation failed: " + (data.error || "Resolve checks above");
         preflightBanner.className = "preflight-banner error";
-        preflightBanner.innerHTML = `✗ PREFLIGHT WARNING: Target ${address} unreachable (${data.error}). Please verify Spectra receiver listener.`;
+        preflightBanner.innerHTML = `✗ PREFLIGHT FAILED: ${data.error || "One or more preflight diagnostic checks failed."}`;
       }
       preflightBanner.classList.remove("hidden");
     } catch (e) {
+      preflightPassed = false;
+      btnStart.disabled = true;
+      btnStart.title = "Preflight validation error: " + e.message;
       preflightBanner.className = "preflight-banner error";
       preflightBanner.innerText = "Preflight diagnostic error: " + e.message;
       preflightBanner.classList.remove("hidden");

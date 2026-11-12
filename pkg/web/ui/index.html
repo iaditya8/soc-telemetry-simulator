@@ -22,13 +22,13 @@
         </div>
       </div>
 
-      <nav class="nav-tabs">
-        <button class="nav-tab active" data-tab="tab-monitor">Live Monitor</button>
-        <button class="nav-tab" data-tab="tab-fleet">Fleet Manager</button>
-        <button class="nav-tab" data-tab="tab-catalog">Event Catalog</button>
-        <button class="nav-tab" data-tab="tab-config">Run Configurator</button>
-        <button class="nav-tab" data-tab="tab-preflight">Preflight Validator</button>
-        <button class="nav-tab" data-tab="tab-reports">Reports Archive</button>
+      <nav class="nav-tabs" role="tablist" aria-label="Dashboard Navigation">
+        <button id="tab-btn-monitor" class="nav-tab active" role="tab" aria-selected="true" aria-controls="tab-monitor" data-tab="tab-monitor">Live Monitor</button>
+        <button id="tab-btn-fleet" class="nav-tab" role="tab" aria-selected="false" aria-controls="tab-fleet" data-tab="tab-fleet">Fleet Manager</button>
+        <button id="tab-btn-catalog" class="nav-tab" role="tab" aria-selected="false" aria-controls="tab-catalog" data-tab="tab-catalog">Event Catalog</button>
+        <button id="tab-btn-config" class="nav-tab" role="tab" aria-selected="false" aria-controls="tab-config" data-tab="tab-config">Run Configurator</button>
+        <button id="tab-btn-preflight" class="nav-tab" role="tab" aria-selected="false" aria-controls="tab-preflight" data-tab="tab-preflight">Preflight Validator</button>
+        <button id="tab-btn-reports" class="nav-tab" role="tab" aria-selected="false" aria-controls="tab-reports" data-tab="tab-reports">Reports Archive</button>
       </nav>
 
       <div class="header-right">
@@ -43,7 +43,7 @@
     <!-- Main Content Area -->
     <main class="app-body">
       <!-- TAB 1: LIVE MONITOR -->
-      <section id="tab-monitor" class="tab-pane active">
+      <section id="tab-monitor" class="tab-pane active" role="tabpanel" aria-labelledby="tab-btn-monitor">
         <!-- Top KPI Row -->
         <div class="kpi-grid">
           <div class="kpi-card">
@@ -103,7 +103,7 @@
               <span id="active-run-id" class="code-pill">RUN-IDLE</span>
             </div>
             <div class="control-actions">
-              <button id="btn-start" class="btn btn-primary btn-large">
+              <button id="btn-start" class="btn btn-primary btn-large" disabled title="Preflight validation required before starting run">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                 Start Simulation
               </button>
@@ -171,7 +171,7 @@
       </section>
 
       <!-- TAB 2: FLEET MANAGER -->
-      <section id="tab-fleet" class="tab-pane">
+      <section id="tab-fleet" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-fleet">
         <div class="card">
           <div class="panel-header">
             <div>
@@ -201,7 +201,7 @@
 
           <!-- Filter & Search Toolbar -->
           <div class="toolbar-row">
-            <input type="text" id="fleet-search" class="search-input" placeholder="Filter by Hostname, IP, Role, Subnet...">
+            <input type="text" id="fleet-search" class="search-input" placeholder="Filter by Hostname, IP, Role, Subnet..." aria-label="Filter Fleet Inventory">
             <span class="total-badge"><strong id="fleet-total-badge">100</strong> Logical Endpoints</span>
           </div>
 
@@ -233,30 +233,26 @@
           <div class="modal-content card">
             <div class="panel-header">
               <h3>Bulk Provision Virtual Fleet</h3>
-              <button id="btn-close-modal" class="btn-close">&times;</button>
+              <button id="btn-close-modal" class="btn-close" aria-label="Close modal">&times;</button>
             </div>
             <div class="form-grid">
               <div class="form-group">
-                <label>Total Endpoint Count</label>
+                <label for="bulk-count">Total Endpoint Count</label>
                 <input type="number" id="bulk-count" value="100" min="5" max="100000">
               </div>
               <div class="form-group">
-                <label>Subnet CIDR Pool</label>
-                <input type="text" id="bulk-cidr" value="10.100.0.0/16">
-              </div>
-              <div class="form-group">
-                <label>Deterministic Random Seed</label>
+                <label for="bulk-seed">Deterministic Random Seed</label>
                 <input type="number" id="bulk-seed" value="42">
               </div>
             </div>
             <div class="form-group">
-              <label>Role Distribution Percentages (Must sum to 100%)</label>
+              <span class="form-label-title">Role Distribution Percentages (Must sum to 100%)</span>
               <div class="distribution-inputs">
-                <div><span>Workstations:</span><input type="number" id="bulk-dist-wks" value="60">%</div>
-                <div><span>Linux Servers:</span><input type="number" id="bulk-dist-linux" value="20">%</div>
-                <div><span>Firewalls:</span><input type="number" id="bulk-dist-fw" value="10">%</div>
-                <div><span>DNS Servers:</span><input type="number" id="bulk-dist-dns" value="5">%</div>
-                <div><span>Web Servers:</span><input type="number" id="bulk-dist-web" value="5">%</div>
+                <div><label for="bulk-dist-wks">Workstations:</label><input type="number" id="bulk-dist-wks" value="60">%</div>
+                <div><label for="bulk-dist-linux">Linux Servers:</label><input type="number" id="bulk-dist-linux" value="20">%</div>
+                <div><label for="bulk-dist-fw">Firewalls:</label><input type="number" id="bulk-dist-fw" value="10">%</div>
+                <div><label for="bulk-dist-dns">DNS Servers:</label><input type="number" id="bulk-dist-dns" value="5">%</div>
+                <div><label for="bulk-dist-web">Web Servers:</label><input type="number" id="bulk-dist-web" value="5">%</div>
               </div>
             </div>
             <div class="modal-actions">
@@ -268,7 +264,7 @@
       </section>
 
       <!-- TAB 3: EVENT CATALOG -->
-      <section id="tab-catalog" class="tab-pane">
+      <section id="tab-catalog" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-catalog">
         <div class="card">
           <div class="panel-header">
             <div>
@@ -298,7 +294,7 @@
       </section>
 
       <!-- TAB 4: RUN CONFIGURATOR -->
-      <section id="tab-config" class="tab-pane">
+      <section id="tab-config" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-config">
         <div class="card">
           <div class="panel-header">
             <div>
@@ -312,11 +308,11 @@
             <div class="config-section">
               <h4>1. Generation Throughput & Duration</h4>
               <div class="form-group">
-                <label>Target EPS: <strong id="cfg-eps-val">10,000</strong> EPS</label>
+                <label for="cfg-eps-slider">Target EPS: <strong id="cfg-eps-val">10,000</strong> EPS</label>
                 <input type="range" id="cfg-eps-slider" min="100" max="200000" step="100" value="10000" class="slider">
               </div>
               <div class="form-group">
-                <label>Duration (Seconds, 0 = Continuous Unbounded)</label>
+                <label for="cfg-duration">Duration (Seconds, 0 = Continuous Unbounded)</label>
                 <input type="number" id="cfg-duration" value="60" min="0">
               </div>
             </div>
@@ -324,7 +320,7 @@
             <div class="config-section">
               <h4>2. Traffic Mix (Normal vs Suspicious)</h4>
               <div class="form-group">
-                <label>Normal Baseline Ratio: <strong id="cfg-ratio-normal">95%</strong> | Suspicious: <strong id="cfg-ratio-threat">5%</strong></label>
+                <label for="cfg-ratio-slider">Normal Baseline Ratio: <strong id="cfg-ratio-normal">95%</strong> | Suspicious: <strong id="cfg-ratio-threat">5%</strong></label>
                 <input type="range" id="cfg-ratio-slider" min="0" max="100" value="95" class="slider">
               </div>
               <div class="form-group">
@@ -342,7 +338,7 @@
               <h4>3. Destination Transport (SIEM / Spectra)</h4>
               <div class="form-grid">
                 <div class="form-group">
-                  <label>Transport Mode</label>
+                  <label for="cfg-transport">Transport Mode</label>
                   <select id="cfg-transport">
                     <option value="tcp">Streaming TCP / Syslog (Port 514 / 5140)</option>
                     <option value="hec">Splunk HTTP Event Collector (HEC)</option>
@@ -350,15 +346,15 @@
                   </select>
                 </div>
                 <div class="form-group">
-                  <label>Target Host / IP</label>
+                  <label for="cfg-host">Target Host / IP</label>
                   <input type="text" id="cfg-host" value="127.0.0.1">
                 </div>
                 <div class="form-group">
-                  <label>Target Port</label>
+                  <label for="cfg-port">Target Port</label>
                   <input type="number" id="cfg-port" value="9000">
                 </div>
                 <div class="form-group">
-                  <label>HEC Auth Token (Masked in Reports)</label>
+                  <label for="cfg-token">HEC Auth Token (Masked in Reports)</label>
                   <input type="password" id="cfg-token" placeholder="Optional token...">
                 </div>
               </div>
@@ -368,7 +364,7 @@
       </section>
 
       <!-- TAB 5: PREFLIGHT VALIDATOR -->
-      <section id="tab-preflight" class="tab-pane">
+      <section id="tab-preflight" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-preflight">
         <div class="card">
           <div class="panel-header">
             <div>
@@ -418,7 +414,7 @@
       </section>
 
       <!-- TAB 6: REPORTS ARCHIVE -->
-      <section id="tab-reports" class="tab-pane">
+      <section id="tab-reports" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-reports">
         <div class="card">
           <div class="panel-header">
             <div>

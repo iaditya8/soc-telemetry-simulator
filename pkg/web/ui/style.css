@@ -90,6 +90,23 @@ body {
   border: 1px solid var(--border-color);
 }
 
+@media (max-width: 900px) {
+  .app-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .nav-tabs {
+    overflow-x: auto;
+    white-space: nowrap;
+    width: 100%;
+    -webkit-overflow-scrolling: touch;
+  }
+  .header-right {
+    justify-content: space-between;
+  }
+}
+
 .nav-tab {
   background: none;
   border: none;
@@ -413,11 +430,17 @@ body {
 }
 
 .dist-seg { height: 100%; transition: width 0.3s ease; }
-.dist-wks { background-color: var(--cyan); color: var(--cyan); }
-.dist-linux { background-color: var(--yellow); color: var(--yellow); }
-.dist-fw { background-color: var(--red); color: var(--red); }
-.dist-dns { background-color: var(--purple); color: var(--purple); }
-.dist-web { background-color: var(--green); color: var(--green); }
+.dist-seg.dist-wks { background-color: var(--cyan); }
+.dist-seg.dist-linux { background-color: var(--yellow); }
+.dist-seg.dist-fw { background-color: var(--red); }
+.dist-seg.dist-dns { background-color: var(--purple); }
+.dist-seg.dist-web { background-color: var(--green); }
+
+.dist-label.dist-wks strong { color: var(--cyan); }
+.dist-label.dist-linux strong { color: var(--yellow); }
+.dist-label.dist-fw strong { color: var(--red); }
+.dist-label.dist-dns strong { color: var(--purple); }
+.dist-label.dist-web strong { color: var(--green); }
 
 .toolbar-row {
   display: flex;
@@ -463,6 +486,9 @@ body {
   padding: 16px;
   cursor: pointer;
   transition: all 0.2s;
+  text-align: left;
+  font-family: inherit;
+  width: 100%;
 }
 
 .catalog-card:hover, .catalog-card.selected {
@@ -680,6 +706,8 @@ body {
 .modal-content {
   max-width: 600px;
   width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
 }
 
 .btn-close {
