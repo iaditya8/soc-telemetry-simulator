@@ -65,6 +65,7 @@ type Server struct {
 	accounting   *ledger.AccountingEngine
 	cancelSim    context.CancelFunc
 	simDone      chan struct{}
+	hub          *TelemetryHub
 }
 
 // NewServer initializes a new Server bound strictly to localhost.
@@ -104,6 +105,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		fleetMgr:     fm,
 		accounting:   ledger.NewAccountingEngine(),
 	}
+	s.hub = NewTelemetryHub(s)
 
 	mux := http.NewServeMux()
 	s.registerRoutes(mux)
@@ -131,6 +133,11 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/reports", s.handleReports)
 	mux.HandleFunc("/api/reports/download", s.handleReportDownload)
 
+	// Live streaming routes (WebSocket & SSE)
+	mux.HandleFunc("/ws", s.hub.HandleWS)
+	mux.HandleFunc("/api/live/ws", s.hub.HandleWS)
+	mux.HandleFunc("/api/live/stream", s.hub.HandleSSE)
+
 	// Embedded static UI file server
 	uiFS, err := fs.Sub(embeddedUI, "ui")
 	if err != nil {
@@ -147,6 +154,10 @@ func (s *Server) Start() error {
 		return fmt.Errorf("failed to listen on %s: %w", s.cfg.BindAddr, err)
 	}
 	s.listener = l
+
+	// Start telemetry hub broadcaster
+	go s.hub.Start(context.Background())
+
 	go func() {
 		_ = s.httpServer.Serve(l)
 	}()
@@ -175,6 +186,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.cancelSim()
 	}
 	s.mu.Unlock()
+
+	if s.hub != nil {
+		s.hub.Close()
+	}
 
 	return s.httpServer.Shutdown(ctx)
 }
