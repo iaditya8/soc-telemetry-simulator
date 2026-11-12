@@ -41,6 +41,12 @@ scratch/
 Thumbs.db
 desktop.ini
 
+# Local-only design notes and agent briefing specs (kept locally, not tracked remotely)
+ARCHITECTURE_DESIGN.md
+ARCHITECTURE.mmd
+docs/0[1-9]-*.md
+docs/1[0-2]-*.md
+
 # IDE files
 .idea/
 .vscode/
