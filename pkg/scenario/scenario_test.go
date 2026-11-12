@@ -229,6 +229,95 @@ func TestOrchestratorRatioBlending(t *testing.T) {
 	}
 }
 
+func TestCloudAccountCompromiseScenario(t *testing.T) {
+	_, fmts := setupTestFleet()
+	ep := &fleet.Endpoint{
+		ID:       "EP-CLOUD-01",
+		Hostname: "aws-prod-account",
+		IPStr:    "10.100.1.50",
+		Role:     fleet.RoleCloudAccount,
+	}
+
+	sc := NewCloudAccountCompromiseScenario("198.51.100.199", "admin_cloud", ep, 3, fmts)
+	now := time.Now().UTC()
+	rng := rand.New(rand.NewSource(42))
+
+	// Attempt 1: Failed ConsoleLogin
+	buf := buffer.GetBuffer()
+	sc.Step(buf, now, 1, rng)
+	out := buf.String()
+	buf.Release()
+	if !strings.Contains(out, `"ConsoleLogin":"Failure"`) {
+		t.Fatalf("expected failed ConsoleLogin on attempt 1, got: %s", out)
+	}
+	if !strings.Contains(out, "198.51.100.199") {
+		t.Fatalf("expected attacker IP in CloudTrail output")
+	}
+
+	// Attempt 2: Failed ConsoleLogin
+	buf = buffer.GetBuffer()
+	sc.Step(buf, now, 2, rng)
+	out = buf.String()
+	buf.Release()
+	if !strings.Contains(out, `"ConsoleLogin":"Failure"`) {
+		t.Fatalf("expected failed ConsoleLogin on attempt 2")
+	}
+
+	// Attempt 3: Success ConsoleLogin
+	buf = buffer.GetBuffer()
+	sc.Step(buf, now, 3, rng)
+	out = buf.String()
+	buf.Release()
+	if !strings.Contains(out, `"ConsoleLogin":"Success"`) {
+		t.Fatalf("expected successful ConsoleLogin on attempt 3")
+	}
+
+	// Attempt 4: Privilege Escalation
+	buf = buffer.GetBuffer()
+	sc.Step(buf, now, 4, rng)
+	out = buf.String()
+	buf.Release()
+	if !strings.Contains(out, "AttachUserPolicy") || !strings.Contains(out, "AdministratorAccess") {
+		t.Fatalf("expected AttachUserPolicy with AdministratorAccess, got: %s", out)
+	}
+
+	if !sc.IsCompleted() {
+		t.Fatalf("expected scenario to be marked completed")
+	}
+}
+
+func TestCloudPasswordSprayScenario(t *testing.T) {
+	_, fmts := setupTestFleet()
+	ep := &fleet.Endpoint{
+		ID:       "EP-AZURE-01",
+		Hostname: "entra-tenant",
+		Domain:   "corp.onmicrosoft.com",
+		Role:     fleet.RoleCloudAccount,
+	}
+
+	sc := NewCloudPasswordSprayScenario("185.220.101.5", "corp.onmicrosoft.com", ep, 5, fmts)
+	now := time.Now().UTC()
+	rng := rand.New(rand.NewSource(42))
+
+	for i := 1; i <= 5; i++ {
+		buf := buffer.GetBuffer()
+		sc.Step(buf, now, uint64(i), rng)
+		out := buf.String()
+		buf.Release()
+
+		if !strings.Contains(out, `"errorCode":50126`) {
+			t.Fatalf("expected Entra ID error code 50126 on attempt %d, got: %s", i, out)
+		}
+		if !strings.Contains(out, "corp.onmicrosoft.com") {
+			t.Fatalf("expected domain in Entra ID sign-in log")
+		}
+	}
+
+	if !sc.IsCompleted() {
+		t.Fatalf("expected password spray scenario to be marked completed")
+	}
+}
+
 func BenchmarkOrchestratorDecision(b *testing.B) {
 	fm, fmts := setupTestFleet()
 	orch := NewOrchestrator(OrchestratorConfig{SuspiciousRatio: 0.05}, fm, fmts)

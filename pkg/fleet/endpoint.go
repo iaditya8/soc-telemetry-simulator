@@ -17,6 +17,7 @@ const (
 	RoleFirewall         Role = "Firewall"
 	RoleDNSServer        Role = "DNSServer"
 	RoleWebServer        Role = "WebServer"
+	RoleCloudAccount     Role = "CloudAccount"
 )
 
 // ActiveUser represents a simulated user session currently authenticated on an endpoint.
