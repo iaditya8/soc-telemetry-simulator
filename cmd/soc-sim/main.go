@@ -13,6 +13,7 @@ import (
 	"github.com/iaditya8/soc-telemetry-simulator/pkg/fleet"
 	"github.com/iaditya8/soc-telemetry-simulator/pkg/generator"
 	"github.com/iaditya8/soc-telemetry-simulator/pkg/mockserver"
+	"github.com/iaditya8/soc-telemetry-simulator/pkg/web"
 )
 
 const (
@@ -134,7 +135,38 @@ func main() {
 			}
 		}
 	case "server":
-		fmt.Printf(" [Server] Mode: Web Dashboard Server on %s:%d\n", cfg.Server.BindAddress, cfg.Server.Port)
+		bindAddr := fmt.Sprintf("%s:%d", cfg.Server.BindAddress, cfg.Server.Port)
+		if cfg.Server.BindAddress == "" {
+			bindAddr = fmt.Sprintf("127.0.0.1:%d", cfg.Server.Port)
+		}
+		reportsDir := cfg.Ledger.ReportOutputDir
+		if reportsDir == "" {
+			reportsDir = "./reports"
+		}
+
+		webSrv, err := web.NewServer(web.ServerConfig{
+			BindAddr:   bindAddr,
+			ReportsDir: reportsDir,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, " [Error] Failed to initialize web server: %v\n", err)
+			os.Exit(1)
+		}
+		if err := webSrv.Start(); err != nil {
+			fmt.Fprintf(os.Stderr, " [Error] Failed to start web server: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf(" [Server] Embedded Web Dashboard & REST API live at: %s\n", webSrv.URL())
+		fmt.Printf(" [Server] Press Ctrl+C to terminate.\n\n")
+
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		<-ctx.Done()
+		fmt.Println("\n [Server] Shutting down web server...")
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		_ = webSrv.Shutdown(shutdownCtx)
+		fmt.Println(" [Server] Server exited cleanly.")
 	case "receiver":
 		tcpAddr := ""
 		if *receiverTCPPort > 0 {

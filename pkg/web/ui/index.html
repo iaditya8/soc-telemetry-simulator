@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SOC Telemetry Simulator — Control Console</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="app-container">
+    <header class="navbar">
+      <div class="nav-brand">
+        <span class="brand-icon">⚡</span>
+        <div>
+          <h2>SOC Telemetry Simulator</h2>
+          <span class="subtext">High-Throughput Enterprise Telemetry Generator & SIEM Evaluator</span>
+        </div>
+      </div>
+      <div class="nav-status">
+        <span class="status-indicator" id="status-dot"></span>
+        <span id="run-status">IDLE</span>
+        <span class="uptime" id="uptime-display">Uptime: 0s</span>
+      </div>
+    </header>
+
+    <main class="dashboard-grid">
+      <!-- Left Column: Run Controls & Preflight -->
+      <section class="card control-card">
+        <h3>Simulation Controls</h3>
+        <div class="form-group">
+          <label for="target-eps">Target EPS</label>
+          <input type="number" id="target-eps" value="10000" min="1" max="500000">
+        </div>
+        <div class="form-group">
+          <label for="duration-sec">Duration (seconds, 0 = continuous)</label>
+          <input type="number" id="duration-sec" value="60" min="0">
+        </div>
+        <div class="form-group">
+          <label for="dest-type">Destination Forwarder</label>
+          <select id="dest-type">
+            <option value="tcp">TCP / TLS Streaming</option>
+            <option value="splunk_hec">Splunk HTTP Event Collector (HEC)</option>
+            <option value="file">File Spooling</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="dest-addr">Destination Address</label>
+          <input type="text" id="dest-addr" value="127.0.0.1:9000">
+        </div>
+
+        <div class="button-group">
+          <button id="btn-preflight" class="btn btn-secondary">Test Connection (Preflight)</button>
+          <button id="btn-start" class="btn btn-primary">Start Simulation</button>
+          <button id="btn-stop" class="btn btn-danger" disabled>Stop / Drain</button>
+        </div>
+        <div id="preflight-result" class="preflight-box hidden"></div>
+      </section>
+
+      <!-- Center Column: Telemetry Metrics & Telemetry Live Overview -->
+      <section class="card metrics-card">
+        <h3>Real-time Metrics</h3>
+        <div class="metrics-grid">
+          <div class="metric-box">
+            <span class="metric-label">Observed Wire EPS</span>
+            <span class="metric-value" id="val-eps">0</span>
+          </div>
+          <div class="metric-box">
+            <span class="metric-label">Total Generated</span>
+            <span class="metric-value" id="val-generated">0</span>
+          </div>
+          <div class="metric-box">
+            <span class="metric-label">Total Acknowledged</span>
+            <span class="metric-value" id="val-acknowledged">0</span>
+          </div>
+          <div class="metric-box">
+            <span class="metric-label">Dropped / Backpressure</span>
+            <span class="metric-value" id="val-dropped">0</span>
+          </div>
+        </div>
+
+        <h4 style="margin-top: 20px; margin-bottom: 10px; font-size: 14px; color: #94a3b8;">Active Fleet & Endpoints</h4>
+        <div id="fleet-summary" class="fleet-box">
+          <span id="fleet-count">0</span> logical endpoints provisioned.
+        </div>
+      </section>
+
+      <!-- Right Column: Event Catalog & MITRE ATT&CK Scenarios -->
+      <section class="card catalog-card">
+        <h3>Supported Event Catalog</h3>
+        <ul id="catalog-list" class="catalog-list">
+          <li><strong>Windows Event XML:</strong> 4624, 4625, 4688, 4720</li>
+          <li><strong>Linux Syslog:</strong> SSH Auth, Sudo escalation, Systemd</li>
+          <li><strong>Palo Alto Networks:</strong> PAN-OS 54-column CSV Traffic & Threat</li>
+          <li><strong>BIND9 DNS:</strong> Standard DNS query logs</li>
+          <li><strong>MITRE ATT&CK:</strong> T1110.001, T1046, T1071.004, T1059.001</li>
+        </ul>
+      </section>
+    </main>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>
