@@ -263,12 +263,12 @@ func BenchmarkFormat4624(b *testing.B) {
 	now := time.Now().UTC()
 	params := Windows4624Params{LogonType: 2}
 
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	var i uint64
+	for b.Loop() {
 		buf := buffer.GetBuffer()
-		fmt.Format4624(buf, ep, params, uint64(i), now)
+		fmt.Format4624(buf, ep, params, i, now)
 		buf.Release()
+		i++
 	}
 }
 
@@ -282,11 +282,11 @@ func BenchmarkFormat4688(b *testing.B) {
 		ParentProcessName:  `C:\Windows\explorer.exe`,
 	}
 
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	var j uint64
+	for b.Loop() {
 		buf := buffer.GetBuffer()
-		fmt.Format4688(buf, ep, params, uint64(i), now)
+		fmt.Format4688(buf, ep, params, j, now)
 		buf.Release()
+		j++
 	}
 }

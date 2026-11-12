@@ -47,13 +47,12 @@ func BenchmarkMemoryGeneration100kEPS(b *testing.B) {
 		b.Fatal("fleet empty")
 	}
 
-	b.ReportAllocs()
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	var i int
+	for b.Loop() {
 		buf.Reset()
 		ep := endpoints[i%epCount]
 		engine.SynthesizeBaselineEvent(ep, buf)
+		i++
 	}
 }
 

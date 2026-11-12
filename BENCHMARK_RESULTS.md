@@ -4,7 +4,7 @@
 
 This report provides empirical and mathematical validation that the **SOC Telemetry Simulator** achieves and sustains **100,000+ Events Per Second (EPS)** on bare-metal commodity developer hardware (Windows 11, Intel Core i5, 16 GB RAM) with **zero garbage collection pressure (0 allocs/op on critical paths)** and a memory footprint strictly bounded under the **500 MB ceiling** (<5 MB peak heap observed).
 
-```
+```text
 ========================================================================
                  100,000 EPS HARDWARE VALIDATION REPORT                 
 ========================================================================
@@ -80,7 +80,7 @@ Zero synthetic wrapper fields or JSON envelopes: every formatter writes authenti
 | **MITRE Engine** | `BenchmarkOrchestratorDecision` | 100,000,000 | **12.44 ns/op** | 0 B/op | **0 allocs/op** |
 | **ATT&CK Attack Step** | `BenchmarkScenarioStep` | 1,997,592 | **1,866 ns/op** | 0 B/op | **0 allocs/op** |
 | **Pure Go Hasher** | `BenchmarkXXHash64` | 73,609,696 | **43.01 ns/op** | 0 B/op | **0 allocs/op** |
-| **7-State Accounting**| `BenchmarkAccountingRecord` | 3,228,657 | **374.5 ns/op** | 0 B/op | **0 allocs/op** |
+| **7-State Accounting** | `BenchmarkAccountingRecord` | 3,228,657 | **374.5 ns/op** | 0 B/op | **0 allocs/op** |
 | **Ring Ledger Ring** | `BenchmarkRingLedgerRecord` | 3,123,552 | **484.1 ns/op** | 0 B/op | **0 allocs/op** |
 
 ---
@@ -106,11 +106,13 @@ To guarantee that the simulator complies with the strict **500 MB RAM budget**:
 ## 5. How to Reproduce Benchmarks
 
 ### A. Run Integrated Hardware Benchmark CLI Mode
+
 ```powershell
 go run cmd/soc-sim/main.go -mode benchmark -eps 100000 -duration 10
 ```
 
 ### B. Run Subsystem Micro-Benchmarks with Memory Accounting
+
 ```powershell
 # Generator and Memory Stress Test
 go test -v -run="TestMemoryStress500MBCap" -bench="BenchmarkMemoryGeneration100kEPS" -benchmem .\pkg\generator

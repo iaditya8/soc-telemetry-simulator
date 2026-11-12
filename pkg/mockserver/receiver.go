@@ -389,7 +389,7 @@ func (r *MockReceiver) Close() error {
 
 	var firstErr error
 	if r.tcpListener != nil {
-		if err := r.tcpListener.Close(); err != nil && firstErr == nil {
+		if err := r.tcpListener.Close(); err != nil {
 			firstErr = err
 		}
 	}

@@ -240,12 +240,13 @@ func BenchmarkFleetGeneration250Endpoints(b *testing.B) {
 		},
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	var i int
+	for b.Loop() {
 		fm, _ := NewFleetManager(int64(i + 1))
 		if err := fm.GenerateFleet(cfg); err != nil {
 			b.Fatalf("generation failed: %v", err)
 		}
+		i++
 	}
 }
 

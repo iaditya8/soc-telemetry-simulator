@@ -237,12 +237,12 @@ func BenchmarkPaloAltoTrafficCSV(b *testing.B) {
 		PacketsReceived: 12,
 	}
 
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	var i uint64
+	for b.Loop() {
 		buf := buffer.GetBuffer()
-		formatter.FormatTraffic(buf, ep, params, uint64(i), now)
+		formatter.FormatTraffic(buf, ep, params, i, now)
 		buf.Release()
+		i++
 	}
 }
 
@@ -259,9 +259,7 @@ func BenchmarkBIND9Query(b *testing.B) {
 		Status:     "OK",
 	}
 
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		buf := buffer.GetBuffer()
 		formatter.FormatQuery(buf, ep, params, now)
 		buf.Release()

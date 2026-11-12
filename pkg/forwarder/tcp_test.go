@@ -45,6 +45,9 @@ func TestTCPForwarderNewlineFraming(t *testing.T) {
 			receivedLines = append(receivedLines, scanner.Text())
 			mu.Unlock()
 		}
+		if err := scanner.Err(); err != nil {
+			t.Errorf("scanner error: %v", err)
+		}
 	}()
 
 	client, err := NewTCPClient(TCPConfig{
@@ -236,6 +239,7 @@ func TestTCPForwarderPool(t *testing.T) {
 						once.Do(func() { close(receivedAll) })
 					}
 				}
+				_ = scanner.Err()
 			}(conn)
 		}
 	}()

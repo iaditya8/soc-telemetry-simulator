@@ -85,9 +85,7 @@ func BenchmarkByteBufferAppend(b *testing.B) {
 	defer buf.Release()
 	now := time.Now().UTC()
 
-	b.ResetTimer()
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		buf.Reset()
 		buf.AppendString("<86>")
 		buf.AppendTimeSyslog(now)
@@ -120,9 +118,7 @@ func BenchmarkEngineThroughput100kEPS(b *testing.B) {
 	buf := GetBuffer()
 	defer buf.Release()
 
-	b.ResetTimer()
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		buf.Reset()
 		engine.SynthesizeBaselineEvent(ep, buf)
 	}

@@ -44,7 +44,7 @@ func TestRingLedgerMonotonicSequence(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < total/workers; i++ {
 				ts := uint64(time.Now().UnixNano())
-				hash := XXHash64([]byte(fmt.Sprintf("worker-%d-event-%d", workerID, i)), 0)
+				hash := XXHash64(fmt.Appendf(nil, "worker-%d-event-%d", workerID, i), 0)
 				seq := rl.Record(hash, ts, uint32(workerID), 4624, ClassNormal)
 
 				mu.Lock()
@@ -133,10 +133,7 @@ func TestRingLedgerCircularOverwrite(t *testing.T) {
 func BenchmarkXXHash64(b *testing.B) {
 	sample := []byte("<86>Nov 12 05:00:00 srv01 sshd[14205]: Accepted publickey for sysadmin from 10.100.1.25 port 54321 ssh2: RSA SHA256:4t7Xg617B5B6x44k9Z1X2Y3Z\n")
 
-	b.ReportAllocs()
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = XXHash64(sample, 0)
 	}
 }

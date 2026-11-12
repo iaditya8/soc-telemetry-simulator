@@ -37,6 +37,7 @@ func TestHECRawBatching(t *testing.T) {
 		for scanner.Scan() {
 			atomic.AddInt64(&receivedLines, 1)
 		}
+		_ = scanner.Err()
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -114,6 +115,7 @@ func TestHECEventJSONWrapping(t *testing.T) {
 			}
 			atomic.AddInt64(&receivedEvents, 1)
 		}
+		_ = scanner.Err()
 
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"text":"Success","code":0}`))
@@ -300,10 +302,7 @@ func BenchmarkHECThroughput(b *testing.B) {
 
 	sample := []byte("<86>Nov 12 05:00:00 srv01 sshd[100]: Accepted publickey for sysadmin from 10.0.0.1 port 54321 ssh2\n")
 
-	b.ReportAllocs()
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if err := client.WriteRaw(sample); err != nil {
 			b.Fatalf("WriteRaw failed: %v", err)
 		}

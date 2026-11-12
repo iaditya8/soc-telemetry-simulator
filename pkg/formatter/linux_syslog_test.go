@@ -219,9 +219,7 @@ func BenchmarkLinuxRFC3164(b *testing.B) {
 		PID:        14205,
 	}
 
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		buf := buffer.GetBuffer()
 		formatter.FormatSSHAuth(buf, ep, params, SyslogFormatRFC3164, now)
 		buf.Release()
@@ -241,9 +239,7 @@ func BenchmarkLinuxRFC5424(b *testing.B) {
 		PID:      15001,
 	}
 
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		buf := buffer.GetBuffer()
 		formatter.FormatSudo(buf, ep, params, SyslogFormatRFC5424, now)
 		buf.Release()

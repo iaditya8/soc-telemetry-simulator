@@ -234,9 +234,7 @@ func BenchmarkOrchestratorDecision(b *testing.B) {
 	orch := NewOrchestrator(OrchestratorConfig{SuspiciousRatio: 0.05}, fm, fmts)
 	rng := rand.New(rand.NewSource(1))
 
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = orch.ShouldEmitSuspicious(rng)
 	}
 }
@@ -253,11 +251,11 @@ func BenchmarkScenarioStep(b *testing.B) {
 	now := time.Now().UTC()
 	rng := rand.New(rand.NewSource(1))
 
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	var i uint64
+	for b.Loop() {
 		buf := buffer.GetBuffer()
-		sc.Step(buf, now, uint64(i+1), rng)
+		sc.Step(buf, now, i+1, rng)
 		buf.Release()
+		i++
 	}
 }

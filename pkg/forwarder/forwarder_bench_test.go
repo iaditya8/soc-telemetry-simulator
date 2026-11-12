@@ -56,10 +56,7 @@ func BenchmarkTCPForwarding100kEPS(b *testing.B) {
 
 	payload := []byte("<86>1 2026-11-12T06:00:00Z srv-linux-001 sshd 12450 - - Accepted publickey for secops from 10.100.1.5 port 54322 ssh2: RSA SHA256:m0+9...\n")
 
-	b.ReportAllocs()
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if err := client.WriteRaw(payload); err != nil {
 			b.Fatalf("TCP WriteRaw error: %v", err)
 		}
@@ -96,10 +93,7 @@ func BenchmarkHTTPForwarding100kEPS(b *testing.B) {
 
 	payload := []byte("<86>1 2026-11-12T06:00:00Z srv-linux-001 sshd 12450 - - Accepted publickey for secops from 10.100.1.5 port 54322 ssh2: RSA SHA256:m0+9...\n")
 
-	b.ReportAllocs()
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if err := client.WriteRaw(payload); err != nil {
 			b.Fatalf("HEC WriteRaw error: %v", err)
 		}

@@ -52,11 +52,11 @@ func BenchmarkByteBufferAppend(b *testing.B) {
 	buf := GetBuffer()
 	defer buf.Release()
 
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	var i uint64
+	for b.Loop() {
 		buf.Reset()
 		buf.AppendString("benchmark_test_string_with_numbers_")
-		buf.AppendUint(uint64(i))
+		buf.AppendUint(i)
+		i++
 	}
 }
